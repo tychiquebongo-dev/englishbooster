@@ -188,6 +188,7 @@ function RealConversationContent() {
 
   // ONLY 100% real registered partners from database
   const [partners, setPartners] = useState<RealPartner[]>([]);
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const [activePartnerId, setActivePartnerId] = useState<string | null>(null);
   const [loadingPartners, setLoadingPartners] = useState(true);
   const [searchFilter, setSearchFilter] = useState('');
@@ -367,6 +368,15 @@ function RealConversationContent() {
 
           setPartners(realList);
 
+          // Mark current user online in database immediately
+          if (user?.id) {
+            supabase
+              .from('profiles')
+              .update({ is_online: true, updated_at: new Date().toISOString() })
+              .eq('id', user.id)
+              .then(() => {});
+          }
+
           // Select matching partner if query param passed, otherwise select first real user
           if (realList.length > 0) {
             if (partnerIdParam && realList.some(r => r.id === partnerIdParam)) {
@@ -418,8 +428,74 @@ function RealConversationContent() {
   }, [user?.id, partnerIdParam, partnerNameParam]);
 
   const activePartner = useMemo(() => {
-    return partners.find(p => p.id === activePartnerId) || partners[0] || null;
-  }, [partners, activePartnerId]);
+    const base = partners.find(p => p.id === activePartnerId) || partners[0] || null;
+    if (!base) return null;
+    return {
+      ...base,
+      is_online: Boolean(base.is_online || onlineUserIds.has(base.id)),
+    };
+  }, [partners, activePartnerId, onlineUserIds]);
+
+  // Global Realtime Presence & Database status listener across all registered users
+  useEffect(() => {
+    const presenceChannel = supabase.channel('global_online_presence', {
+      config: { presence: { key: user?.id || 'chat_visitor' } }
+    });
+
+    const updatePresenceState = () => {
+      const state = presenceChannel.presenceState();
+      const ids = new Set<string>();
+      Object.keys(state).forEach(key => {
+        ids.add(key);
+        const list = state[key] as any[];
+        if (Array.isArray(list)) {
+          list.forEach(p => {
+            if (p.user_id) ids.add(p.user_id);
+          });
+        }
+      });
+      setOnlineUserIds(prev => {
+        const merged = new Set([...prev, ...ids]);
+        return merged;
+      });
+    };
+
+    presenceChannel
+      .on('presence', { event: 'sync' }, updatePresenceState)
+      .on('presence', { event: 'join' }, updatePresenceState)
+      .on('presence', { event: 'leave' }, updatePresenceState)
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED' && user?.id) {
+          try {
+            await presenceChannel.track({
+              user_id: user.id,
+              name: profile?.full_name || user.email,
+              online_at: new Date().toISOString(),
+            });
+          } catch {}
+        }
+      });
+
+    // Realtime database listener for profile status updates
+    const profilesChannel = supabase
+      .channel('chat_profiles_db_sync')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, (payload: any) => {
+        if (payload.new && payload.new.id) {
+          const updatedId = payload.new.id;
+          const isOnline = Boolean(payload.new.is_online);
+          setPartners(prev => prev.map(p => p.id === updatedId ? { ...p, is_online: isOnline } : p));
+          if (isOnline) {
+            setOnlineUserIds(prev => new Set(prev).add(updatedId));
+          }
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(presenceChannel);
+      supabase.removeChannel(profilesChannel);
+    };
+  }, [user?.id, profile?.full_name, supabase]);
 
   const currentMessages = useMemo(() => {
     if (!activePartner) return [];
@@ -549,8 +625,30 @@ function RealConversationContent() {
 
     // Supabase Realtime channel for live messages between real users
     const channelName = `real_chat_${user.id < activePartner.id ? `${user.id}_${activePartner.id}` : `${activePartner.id}_${user.id}`}`;
-    const channel = supabase.channel(channelName);
+    const channel = supabase.channel(channelName, {
+      config: { presence: { key: user.id } }
+    });
     chatChannelRef.current = channel;
+
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const hasPartner = Object.keys(state).some(k => k === activePartner.id) ||
+          Object.values(state).some((list: any) => Array.isArray(list) && list.some((p: any) => p.user_id === activePartner.id));
+        if (hasPartner) {
+          setOnlineUserIds(prev => new Set(prev).add(activePartner.id));
+        }
+      })
+      .on('presence', { event: 'join' }, ({ key, newPresences }: any) => {
+        if (key === activePartner.id || (Array.isArray(newPresences) && newPresences.some((p: any) => p.user_id === activePartner.id))) {
+          setOnlineUserIds(prev => new Set(prev).add(activePartner.id));
+        }
+      })
+      .on('broadcast', { event: 'user_active' }, ({ payload }: any) => {
+        if (payload?.user_id) {
+          setOnlineUserIds(prev => new Set(prev).add(payload.user_id));
+        }
+      })
 
     channel
       .on('broadcast', { event: 'messages_read' }, ({ payload }: any) => {
@@ -682,7 +780,18 @@ function RealConversationContent() {
           }
         }
       )
-      .subscribe();
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          try {
+            await channel.track({ user_id: user.id, in_chat: true, online_at: new Date().toISOString() });
+            channel.send({
+              type: 'broadcast',
+              event: 'user_active',
+              payload: { user_id: user.id, is_online: true },
+            });
+          } catch {}
+        }
+      });
 
     return () => {
       isSubscribed = false;
@@ -1865,6 +1974,7 @@ function RealConversationContent() {
             ) : (
               filteredPartners.map((partner) => {
                 const isSelected = activePartner?.id === partner.id;
+                const isOnline = Boolean(partner.is_online || onlineUserIds.has(partner.id));
                 const msgs = conversationMap[partner.id] || [];
                 const lastMsg = msgs[msgs.length - 1];
 
@@ -1886,10 +1996,10 @@ function RealConversationContent() {
                         src={partner.avatar}
                         alt={partner.name}
                         className={`w-12 h-12 rounded-full object-cover transition-all ${
-                          partner.is_online ? 'ring-2 ring-emerald-500/60' : 'ring-1 ring-amber-400/50 ring-dashed'
+                          isOnline ? 'ring-2 ring-emerald-500/60' : 'ring-1 ring-amber-400/50 ring-dashed'
                         }`}
                       />
-                      {partner.is_online ? (
+                      {isOnline ? (
                         <span 
                           className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-[#00a884] border-2 border-[#111b21] shadow-[0_0_8px_rgba(0,168,132,0.8)]" 
                           title="on line" 
@@ -1909,7 +2019,7 @@ function RealConversationContent() {
                           <span>{partner.flag}</span>
                         </span>
                         <div className="flex items-center gap-1 shrink-0">
-                          {partner.is_online ? (
+                          {isOnline ? (
                             <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 inline-flex items-center gap-1 uppercase tracking-wider">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                               on line

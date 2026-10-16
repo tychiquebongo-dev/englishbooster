@@ -290,6 +290,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           data.avatar_url = googleAvatar;
           supabase.from('profiles').update({ avatar_url: googleAvatar }).eq('id', userId).then(() => {});
         }
+
+        // Automatically mark active user as online in database
+        if (!data.is_online) {
+          data.is_online = true;
+          supabase.from('profiles').update({ is_online: true, updated_at: new Date().toISOString() }).eq('id', userId).then(() => {});
+        }
         setProfile(data);
       }
     } catch (e) {
@@ -453,7 +459,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []); // Run once on mount
 
+  // Realtime Presence Heartbeat & Disconnect cleanup
+  useEffect(() => {
+    if (!user?.id) return;
+
+    // Immediately mark active in DB
+    supabase
+      .from('profiles')
+      .update({ is_online: true, updated_at: new Date().toISOString() })
+      .eq('id', user.id)
+      .then(() => {});
+
+    // Periodic heartbeat every 30s while user has tab open
+    const heartbeat = setInterval(() => {
+      supabase
+        .from('profiles')
+        .update({ is_online: true, updated_at: new Date().toISOString() })
+        .eq('id', user.id)
+        .then(() => {});
+    }, 30000);
+
+    const handleBeforeUnload = () => {
+      try {
+        supabase
+          .from('profiles')
+          .update({ is_online: false, updated_at: new Date().toISOString() })
+          .eq('id', user.id)
+          .then(() => {});
+      } catch {}
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      clearInterval(heartbeat);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [user?.id, supabase]);
+
   const signOut = async () => {
+    if (user?.id) {
+      try {
+        await supabase
+          .from('profiles')
+          .update({ is_online: false, updated_at: new Date().toISOString() })
+          .eq('id', user.id);
+      } catch {}
+    }
     try {
       await supabase.auth.signOut();
     } catch {}

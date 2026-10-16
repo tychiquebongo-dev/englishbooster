@@ -315,11 +315,29 @@ export default function GlobalCallNotifier() {
       })
       .subscribe();
 
+    // Global Presence Channel so all other users on the platform immediately know this user is online
+    const presenceChannel = supabase.channel('global_online_presence', {
+      config: { presence: { key: user.id } }
+    });
+
+    presenceChannel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        try {
+          await presenceChannel.track({
+            user_id: user.id,
+            name: profile?.full_name || user.email,
+            online_at: new Date().toISOString(),
+          });
+        } catch {}
+      }
+    });
+
     return () => {
       stopRinging();
       supabase.removeChannel(channel);
+      supabase.removeChannel(presenceChannel);
     };
-  }, [user?.id, pathname, playSound, supabase, isFr]);
+  }, [user?.id, profile?.full_name, pathname, playSound, supabase, isFr]);
 
   // Accept incoming call
   const handleAcceptCall = () => {
