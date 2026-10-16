@@ -373,7 +373,11 @@ function RealConversationContent() {
               }
             } else {
               setActivePartnerId(realList[0].id);
-              setMobileShowChat(true);
+              if (typeof window !== 'undefined' && window.innerWidth >= 768) {
+                setMobileShowChat(true);
+              } else {
+                setMobileShowChat(false);
+              }
             }
           } else {
             setActivePartnerId(null);
@@ -1335,7 +1339,7 @@ function RealConversationContent() {
   }, [partners, searchFilter]);
 
   return (
-    <div data-fullscreen-route="true" className="max-w-7xl mx-auto px-1 sm:px-4 lg:px-6 py-1 sm:py-3 h-[calc(100dvh-4.25rem)] sm:h-[calc(100dvh-5.5rem)] min-h-[380px] flex flex-col overflow-hidden">
+    <div data-fullscreen-route="true" className="w-full max-w-7xl mx-auto px-0 md:px-4 lg:px-6 py-0 md:py-3 h-[calc(100dvh-3.5rem)] sm:h-[calc(100dvh-4rem)] md:h-[calc(100dvh-5.5rem)] flex flex-col overflow-hidden">
       
       {/* ============================================================== */}
       {/* INCOMING REMOTE CALL MODAL                                     */}
@@ -1388,7 +1392,7 @@ function RealConversationContent() {
       {/* ACTIVE REMOTE WEBRTC VIDEO / AUDIO CALL STAGE                  */}
       {/* ============================================================== */}
       {callActive && (
-        <div className="fixed inset-0 z-50 bg-[#070d1b] flex flex-col p-4 sm:p-6 animate-fade-in select-none">
+        <div className="fixed inset-0 z-50 bg-[#070d1b] flex flex-col p-3 sm:p-6 animate-fade-in select-none safe-pt safe-pb">
           
           {/* Audio player fallback so partner's voice is always heard loudly */}
           <audio
@@ -1581,7 +1585,7 @@ function RealConversationContent() {
                     </div>
 
                     {/* Floating PiP Local Camera Preview */}
-                    <div className="absolute bottom-4 right-4 w-44 sm:w-60 aspect-video rounded-2xl overflow-hidden border-2 border-cyan-400/50 shadow-2xl bg-slate-900 z-20">
+                    <div className="absolute bottom-4 right-4 w-28 xs:w-40 sm:w-60 aspect-video rounded-xl sm:rounded-2xl overflow-hidden border-2 border-cyan-400/50 shadow-2xl bg-slate-900 z-20">
                       {isCameraOff ? (
                         <div className="w-full h-full flex flex-col items-center justify-center bg-slate-950 p-2 text-center">
                           <img
@@ -1613,7 +1617,7 @@ function RealConversationContent() {
                   </div>
                 ) : (
                   /* Waiting for partner connection: Split card with Local Camera Active Preview */
-                  <div className="w-full h-full grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="w-full h-full flex flex-col md:grid md:grid-cols-2 gap-3 sm:gap-4 overflow-y-auto">
                     {/* Ringing Partner Card */}
                     <div className="w-full h-full rounded-3xl bg-[#111b21] border border-white/10 flex flex-col items-center justify-center p-6 text-center relative overflow-hidden shadow-2xl">
                       <div className="relative mb-4">
@@ -1743,7 +1747,7 @@ function RealConversationContent() {
       {/* ============================================================== */}
       {/* WHATSAPP CONTAINER (Real Sidebar + Real Discussion Stage)      */}
       {/* ============================================================== */}
-      <div className="flex-1 grid grid-cols-1 md:grid-cols-12 overflow-hidden rounded-2xl border border-white/10 bg-[#111b21] shadow-2xl">
+      <div className="flex-1 grid grid-cols-1 md:grid-cols-12 overflow-hidden rounded-none md:rounded-2xl border-0 md:border md:border-white/10 bg-[#111b21] shadow-2xl h-full">
         
         {/* ============================================================ */}
         {/* LEFT COLUMN: REAL MEMBERS DIRECTORY                          */}
@@ -1751,7 +1755,7 @@ function RealConversationContent() {
         <aside className={`md:col-span-5 lg:col-span-4 flex flex-col border-r border-white/10 bg-[#111b21] ${mobileShowChat ? 'hidden md:flex' : 'flex'}`}>
           
           {/* Header */}
-          <div className="h-16 px-4 bg-[#202c33] flex items-center justify-between border-b border-white/10 shrink-0">
+          <div className="h-14 sm:h-16 px-3.5 sm:px-4 bg-[#202c33] flex items-center justify-between border-b border-white/10 shrink-0">
             <div className="flex items-center gap-3">
               <div className="relative">
                 <img
@@ -1800,7 +1804,7 @@ function RealConversationContent() {
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
                 placeholder="Search registered members..."
-                className="w-full pl-9 pr-3 py-2 bg-[#202c33] border border-transparent focus:border-emerald-500 rounded-lg text-xs text-white placeholder-slate-400 focus:outline-none transition-colors"
+                className="w-full pl-9 pr-3 py-2 bg-[#202c33] border border-transparent focus:border-[#00a884] rounded-lg text-xs text-white placeholder-slate-400 focus:outline-none transition-colors"
               />
             </div>
           </div>
@@ -1912,12 +1916,15 @@ function RealConversationContent() {
           {activePartner ? (
             <>
               {/* WhatsApp Active Chat Header */}
-              <div className="h-16 px-3 sm:px-4 bg-[#202c33] flex items-center justify-between border-b border-white/10 shrink-0 z-10">
-                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <div className="h-14 sm:h-16 px-2.5 sm:px-4 bg-[#202c33] flex items-center justify-between border-b border-white/10 shrink-0 z-10">
+                <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1">
                   <button
                     type="button"
-                    onClick={() => setMobileShowChat(false)}
-                    className="md:hidden p-2 rounded-full hover:bg-white/10 text-white shrink-0"
+                    onClick={() => {
+                      setMobileShowChat(false);
+                      inputRef.current?.blur();
+                    }}
+                    className="md:hidden p-1.5 sm:p-2 rounded-full hover:bg-white/10 text-white shrink-0 active:scale-95 transition-transform cursor-pointer"
                     title="Back to Chats"
                   >
                     <ArrowLeft className="w-5 h-5" />
@@ -1927,49 +1934,49 @@ function RealConversationContent() {
                     <img
                       src={activePartner.avatar}
                       alt={activePartner.name}
-                      className={`w-10 h-10 rounded-full object-cover transition-all ${
+                      className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover transition-all ${
                         activePartner.is_online ? 'ring-2 ring-emerald-500/70' : 'ring-1 ring-amber-400/50 ring-dashed'
                       }`}
                     />
                     {activePartner.is_online ? (
-                      <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-[#00a884] border-2 border-[#202c33] shadow-[0_0_8px_rgba(0,168,132,0.8)]" title="on line" />
+                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-[#00a884] border-2 border-[#202c33] shadow-[0_0_8px_rgba(0,168,132,0.8)]" title="on line" />
                     ) : (
-                      <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-dashed border-amber-400 bg-amber-500/40" title="outline" />
+                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-dashed border-amber-400 bg-amber-500/40" title="outline" />
                     )}
                   </div>
 
-                  <div className="min-w-0">
-                    <h2 className="font-bold text-sm sm:text-base text-white flex items-center gap-1.5 truncate">
-                      <span>{activePartner.name}</span>
-                      <span>{activePartner.flag}</span>
-                      <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300">
+                  <div className="min-w-0 flex-1">
+                    <h2 className="font-bold text-sm sm:text-base text-white flex items-center gap-1 sm:gap-1.5 truncate leading-tight">
+                      <span className="truncate">{activePartner.name}</span>
+                      <span className="shrink-0">{activePartner.flag}</span>
+                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 hidden sm:inline-flex shrink-0">
                         {activePartner.level}
                       </span>
                     </h2>
-                    <p className="text-[11px] text-slate-400 truncate flex items-center gap-1.5">
-                      <span>{activePartner.country} •</span>
+                    <p className="text-[11px] text-slate-400 truncate flex items-center gap-1 sm:gap-1.5 mt-0.5">
+                      <span className="hidden xs:inline">{activePartner.country} •</span>
                       {activePartner.is_online ? (
-                        <span className="text-emerald-400 font-bold inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/30 text-[10px] uppercase tracking-wider">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                          on line
+                        <span className="text-[#00a884] font-semibold inline-flex items-center gap-1 text-[11px]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#00a884] animate-pulse" />
+                          online
                         </span>
                       ) : (
-                        <span className="text-amber-300 font-bold inline-flex items-center gap-1 px-1.5 py-0.2 rounded border border-dashed border-amber-400/80 bg-amber-500/10 text-[10px] uppercase tracking-wider">
+                        <span className="text-amber-400/90 font-medium inline-flex items-center gap-1 text-[11px]">
                           <WifiOff className="w-2.5 h-2.5 text-amber-400" />
-                          outline
+                          offline
                         </span>
                       )}
                     </p>
                   </div>
                 </div>
 
-                {/* WhatsApp Action Icons (Video, Audio, Search, More Menu) */}
-                <div className="flex items-center gap-1 sm:gap-2 text-[#aebac1]">
+                {/* WhatsApp Action Icons (Video, Audio, Options) */}
+                <div className="flex items-center gap-0.5 sm:gap-1.5 text-[#aebac1] shrink-0">
                   {/* WhatsApp Video Call */}
                   <button
                     type="button"
                     onClick={() => handleStartRemoteCall(true)}
-                    className="p-2 sm:p-2.5 rounded-full hover:bg-white/10 text-[#aebac1] hover:text-white transition-colors cursor-pointer"
+                    className="p-1.5 sm:p-2.5 rounded-full hover:bg-white/10 text-[#aebac1] hover:text-white transition-colors cursor-pointer active:scale-95"
                     title={activePartner.is_online ? "HD Video Call (on line)" : "HD Video Call (outline)"}
                   >
                     <Video className="w-5 h-5" />
@@ -1979,49 +1986,27 @@ function RealConversationContent() {
                   <button
                     type="button"
                     onClick={() => handleStartRemoteCall(false)}
-                    className="p-2 sm:p-2.5 rounded-full hover:bg-white/10 text-[#aebac1] hover:text-white transition-colors cursor-pointer"
+                    className="p-1.5 sm:p-2.5 rounded-full hover:bg-white/10 text-[#aebac1] hover:text-white transition-colors cursor-pointer active:scale-95"
                     title={activePartner.is_online ? "Voice Call (on line)" : "Voice Call (outline)"}
                   >
                     <Phone className="w-5 h-5" />
                   </button>
 
-                  <span className="h-6 w-px bg-white/10 mx-1 hidden sm:block" />
-
-                  {/* Search in chat */}
-                  <button
-                    type="button"
-                    onClick={() => {}}
-                    className="p-2 sm:p-2.5 rounded-full hover:bg-white/10 text-[#aebac1] hover:text-white transition-colors cursor-pointer hidden xs:flex"
-                    title="Search in conversation"
-                  >
-                    <Search className="w-5 h-5" />
-                  </button>
-
-                  {/* WhatsApp Three-Dots Menu */}
+                  {/* WhatsApp Options / Clear */}
                   <button
                     type="button"
                     onClick={() => setShowClearConfirm(true)}
-                    className="p-2 sm:p-2.5 rounded-full hover:bg-white/10 text-[#aebac1] hover:text-white transition-colors cursor-pointer"
+                    className="p-1.5 sm:p-2.5 rounded-full hover:bg-white/10 text-[#aebac1] hover:text-white transition-colors cursor-pointer active:scale-95"
                     title="Menu / Clear conversation"
                   >
                     <MoreVertical className="w-5 h-5" />
-                  </button>
-
-                  {/* Clear / Delete Conversation Button */}
-                  <button
-                    type="button"
-                    onClick={() => setShowClearConfirm(true)}
-                    className="p-2 rounded-full hover:bg-rose-500/15 text-slate-400 hover:text-rose-400 transition-colors border border-transparent hover:border-rose-500/30 cursor-pointer ml-1"
-                    title="Clear Conversation / Supprimer la discussion"
-                  >
-                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
 
               {/* Real Messages Feed */}
               <div 
-                className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-3 relative"
+                className="flex-1 overflow-y-auto px-2.5 py-3 sm:px-5 sm:py-4 space-y-2.5 sm:space-y-3 relative overscroll-contain"
                 style={{
                   backgroundColor: '#0b141a',
                   backgroundImage: `radial-gradient(circle at 50% 50%, rgba(0, 168, 132, 0.04) 0%, transparent 60%)`,
@@ -2353,8 +2338,17 @@ function RealConversationContent() {
 
                 {/* WhatsApp Attachment Menu Popup */}
                 {showAttachMenu && (
-                  <div className="absolute bottom-16 left-6 p-2 rounded-2xl bg-[#233138] border border-white/10 shadow-2xl flex flex-col gap-1 z-30 animate-fade-in w-56">
-                    <span className="text-[10px] font-black uppercase text-[#8696a0] px-2.5 py-1">Quick Practice Topics</span>
+                  <div className="absolute bottom-16 left-2 sm:left-6 p-2 rounded-2xl bg-[#233138] border border-white/10 shadow-2xl flex flex-col gap-1 z-30 animate-fade-in w-64 max-w-[calc(100vw-1rem)]">
+                    <div className="flex items-center justify-between px-2.5 py-1">
+                      <span className="text-[10px] font-black uppercase text-[#8696a0]">Quick Practice Topics</span>
+                      <button 
+                        type="button"
+                        onClick={() => setShowAttachMenu(false)}
+                        className="text-[#8696a0] hover:text-white text-xs p-1"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                     {CONVERSATION_STARTERS.slice(0, 4).map((starter, i) => (
                       <button
                         key={i}
@@ -2363,9 +2357,9 @@ function RealConversationContent() {
                           handleSendMessage(undefined, starter);
                           setShowAttachMenu(false);
                         }}
-                        className="w-full text-left px-2.5 py-1.5 rounded-xl hover:bg-white/10 text-xs text-[#e9edef] truncate transition-colors"
+                        className="w-full text-left px-2.5 py-2 rounded-xl hover:bg-white/10 text-xs text-[#e9edef] truncate transition-colors active:scale-98"
                       >
-                        {starter}
+                        💬 {starter}
                       </button>
                     ))}
                   </div>
@@ -2417,11 +2411,11 @@ function RealConversationContent() {
                       <button
                         type="button"
                         onClick={cancelRecording}
-                        className="px-3 py-1.5 rounded-xl bg-white/10 text-slate-300 text-xs font-semibold hover:bg-white/20 transition-colors flex items-center gap-1 cursor-pointer"
+                        className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-white/10 text-slate-300 text-xs font-semibold hover:bg-white/20 transition-colors flex items-center gap-1 cursor-pointer active:scale-95"
                         title="Cancel recording"
                       >
                         <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                        <span>Cancel</span>
+                        <span className="hidden xs:inline">Cancel</span>
                       </button>
                       <button
                         type="button"
