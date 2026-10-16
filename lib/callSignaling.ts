@@ -52,6 +52,29 @@ export async function broadcastIncomingCall(payload: IncomingCallPayload) {
       }
     });
 
+    // Also send native background Web Push notification (for when user is outside application / phone locked)
+    try {
+      fetch('/api/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          receiverId: payload.receiverId,
+          type: 'call',
+          title: payload.isVideo
+            ? `📹 Appel Vidéo entrant : ${payload.callerName}`
+            : `📞 Appel Vocal entrant : ${payload.callerName}`,
+          body: `${payload.callerName} vous appelle en direct sur English Booster. Appuyez pour décrocher.`,
+          icon: payload.callerAvatar || '/assets/images/logo.svg',
+          url: `/call?partnerId=${payload.callerId}&partnerName=${encodeURIComponent(payload.callerName)}&roomId=${payload.roomId}&video=${payload.isVideo}&autoAnswer=true`,
+          callerId: payload.callerId,
+          callerName: payload.callerName,
+          callerAvatar: payload.callerAvatar,
+          roomId: payload.roomId,
+          isVideo: payload.isVideo,
+        }),
+      }).catch(() => {});
+    } catch {}
+
     // Also persist call invitation into calls table
     try {
       supabase.from('calls').insert({
@@ -176,6 +199,24 @@ export async function broadcastNewMessage(payload: NewMessagePayload) {
   const channel = supabase.channel(channelName);
 
   return new Promise<void>((resolve) => {
+    // Send background Web Push notification in case receiver is hors application
+    try {
+      fetch('/api/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          receiverId: payload.receiverId,
+          type: 'message',
+          title: `💬 Message de ${payload.senderName}`,
+          body: payload.text || (payload.audioUrl ? '🎙️ Message vocal' : 'Nouveau message'),
+          icon: payload.senderAvatar || '/assets/images/logo.svg',
+          url: `/chat?partnerId=${payload.senderId}&partnerName=${encodeURIComponent(payload.senderName)}`,
+          senderId: payload.senderId,
+          senderName: payload.senderName,
+        }),
+      }).catch(() => {});
+    } catch {}
+
     channel.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         channel.send({
@@ -245,4 +286,43 @@ export async function broadcastMessagesRead(conversationId: string, readerId: st
     });
   });
 }
+
+/**
+ * Register the user's browser/phone with Web Push API for background notifications when hors application
+ */
+export async function registerPushSubscription(userId: string) {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return null;
+  }
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    if (!reg) return null;
+
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const { VAPID_PUBLIC_KEY, urlBase64ToUint8Array } = await import('@/lib/pushConfig');
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+    }
+
+    if (sub) {
+      await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          subscription: sub.toJSON(),
+        }),
+      });
+      return sub;
+    }
+  } catch (err) {
+    console.warn('Could not register push subscription:', err);
+  }
+  return null;
+}
+
 

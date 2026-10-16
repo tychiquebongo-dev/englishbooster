@@ -8,7 +8,8 @@ import { createClient } from '@/lib/supabase/client';
 import { 
   IncomingCallPayload, 
   NewMessagePayload, 
-  broadcastCallDeclined 
+  broadcastCallDeclined,
+  registerPushSubscription
 } from '@/lib/callSignaling';
 import { 
   Phone, 
@@ -20,7 +21,8 @@ import {
   Volume2,
   Radio,
   ArrowRight,
-  Bell
+  Bell,
+  Download
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -34,6 +36,7 @@ export default function GlobalCallNotifier() {
   const [incomingCall, setIncomingCall] = useState<IncomingCallPayload | null>(null);
   const [messageToast, setMessageToast] = useState<NewMessagePayload | null>(null);
   const [showPermissionPrompt, setShowPermissionPrompt] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   const ringIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const autoDismissTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -45,13 +48,29 @@ export default function GlobalCallNotifier() {
     if (typeof window === 'undefined') return;
 
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
+      navigator.serviceWorker.register('/sw.js').then((reg) => {
+        if (user?.id && 'Notification' in window && Notification.permission === 'granted') {
+          registerPushSubscription(user.id);
+        }
+      }).catch(() => {});
     }
 
     if ('Notification' in window && Notification.permission === 'default') {
       setShowPermissionPrompt(true);
     }
-  }, []);
+
+    // Capture PWA install prompt for home screen installation (Hors application capability)
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowPermissionPrompt(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, [user?.id]);
 
   // Device physical vibration trigger
   const triggerVibration = (pattern: number | number[]) => {
@@ -182,7 +201,7 @@ export default function GlobalCallNotifier() {
     } catch {}
   };
 
-  // Request phone notification permission explicitly
+  // Request phone notification permission explicitly & register background push subscription
   const requestPhoneNotifications = async () => {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
     try {
@@ -191,16 +210,38 @@ export default function GlobalCallNotifier() {
       if (result === 'granted') {
         playSound('success');
         triggerVibration([100, 50, 100]);
-        // Show test confirmation
+
+        // Register Web Push subscription with server so notifications arrive even when hors application!
+        if (user?.id) {
+          await registerPushSubscription(user.id);
+        }
+
+        // Show confirmation test notification
         showPhoneMessageNotification({
           senderId: 'eb-system',
           senderName: 'English Booster',
           senderAvatar: '/assets/images/logo.svg',
           receiverId: user?.id || '',
-          text: isFr ? 'Notifications activées ! Vous recevrez vos alertes d’appels et messages.' : 'Notifications enabled! You will receive live calls and messages.',
+          text: isFr 
+            ? 'Notifications hors-application activées ! Vous recevrez vos alertes d’appels et messages même application fermée ou écran verrouillé.' 
+            : 'Background notifications enabled! You will receive calls and messages even with app closed.',
         });
       }
-    } catch {}
+    } catch (err) {
+      console.warn('Error activating notifications:', err);
+    }
+  };
+
+  const handleInstallPWA = async () => {
+    if (deferredPrompt) {
+      try {
+        deferredPrompt.prompt();
+        const choice = await deferredPrompt.userChoice;
+        if (choice.outcome === 'accepted') {
+          setDeferredPrompt(null);
+        }
+      } catch {}
+    }
   };
 
   // Stop Ringing helper
@@ -443,42 +484,59 @@ export default function GlobalCallNotifier() {
         </aside>
       )}
 
-      {/* 3. ONE-TAP PHONE NOTIFICATION ACTIVATION PILL */}
+      {/* 3. ONE-TAP BACKGROUND NOTIFICATION & PWA ACTIVATION PILL */}
       {showPermissionPrompt && (
         <aside 
           aria-label="Notification Permission"
-          className="fixed bottom-20 sm:bottom-6 left-3 right-3 sm:left-auto sm:right-6 z-[9980] sm:max-w-sm animate-fade-in safe-pb"
+          className="fixed bottom-20 sm:bottom-6 left-3 right-3 sm:left-auto sm:right-6 z-[9980] sm:max-w-md animate-fade-in safe-pb"
         >
-          <div className="p-3.5 rounded-2xl bg-[#091124]/95 border border-emerald-400/40 shadow-[0_15px_40px_rgba(0,0,0,0.8)] backdrop-blur-xl flex items-center justify-between gap-3 text-white">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 shrink-0">
-                <Bell className="w-4 h-4 animate-bounce" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-xs font-bold truncate">
-                  {isFr ? "Alertes téléphone" : "Phone notifications"}
-                </p>
-                <p className="text-[10px] text-slate-400 line-clamp-1">
-                  {isFr ? "Recevoir les appels et messages de vos partenaires" : "Get incoming calls and message alerts"}
-                </p>
+          <div className="p-3.5 rounded-2xl bg-[#091124]/95 border border-emerald-400/50 shadow-[0_15px_40px_rgba(0,0,0,0.85)] backdrop-blur-xl text-white">
+            <div className="flex items-center justify-between gap-3 mb-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 shrink-0 shadow-inner">
+                  <Bell className="w-4 h-4 animate-bounce" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold truncate">
+                    {isFr ? "Alertes hors-application (Fond & Verrouillé)" : "Background alerts (Screen locked)"}
+                  </p>
+                  <p className="text-[10px] text-slate-300 line-clamp-1">
+                    {isFr ? "Recevoir les appels et messages même application fermée" : "Receive calls and messages even with app closed"}
+                  </p>
+                </div>
               </div>
-            </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={requestPhoneNotifications}
-                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 font-black text-xs hover:scale-105 active:scale-95 transition-all shadow-md cursor-pointer"
-              >
-                {isFr ? "Activer" : "Enable"}
-              </button>
+
               <button
                 type="button"
                 onClick={() => setShowPermissionPrompt(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white"
+                className="p-1 rounded-lg text-slate-400 hover:text-white transition-colors"
                 title="Dismiss"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={requestPhoneNotifications}
+                className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 font-black text-xs hover:scale-102 active:scale-98 transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Bell className="w-3.5 h-3.5" />
+                <span>{isFr ? "Activer les alertes" : "Enable Alerts"}</span>
+              </button>
+
+              {deferredPrompt && (
+                <button
+                  type="button"
+                  onClick={handleInstallPWA}
+                  className="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs transition-colors flex items-center gap-1.5 border border-white/10 cursor-pointer"
+                  title="Installer l'application sur votre écran d'accueil"
+                >
+                  <Download className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>{isFr ? "Installer l'App" : "Install App"}</span>
+                </button>
+              )}
             </div>
           </div>
         </aside>
