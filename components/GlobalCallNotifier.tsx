@@ -19,7 +19,8 @@ import {
   Sparkles, 
   Volume2,
   Radio,
-  ArrowRight
+  ArrowRight,
+  Bell
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -32,9 +33,175 @@ export default function GlobalCallNotifier() {
 
   const [incomingCall, setIncomingCall] = useState<IncomingCallPayload | null>(null);
   const [messageToast, setMessageToast] = useState<NewMessagePayload | null>(null);
+  const [showPermissionPrompt, setShowPermissionPrompt] = useState(false);
+
   const ringIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const autoDismissTimerRef = useRef<NodeJS.Timeout | null>(null);
   const toastDismissTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const activeNotificationRef = useRef<Notification | null>(null);
+
+  // Register service worker on mount & check notification permissions
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+
+    if ('Notification' in window && Notification.permission === 'default') {
+      setShowPermissionPrompt(true);
+    }
+  }, []);
+
+  // Device physical vibration trigger
+  const triggerVibration = (pattern: number | number[]) => {
+    if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        navigator.vibrate(pattern);
+      } catch {}
+    }
+  };
+
+  // Close system notifications
+  const clearCallNotifications = async () => {
+    if (activeNotificationRef.current) {
+      try {
+        activeNotificationRef.current.close();
+      } catch {}
+      activeNotificationRef.current = null;
+    }
+
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        if (reg && reg.getNotifications) {
+          const notifs = await reg.getNotifications({ tag: 'eb-incoming-call' });
+          notifs.forEach(n => n.close());
+        }
+      } catch {}
+    }
+  };
+
+  // Trigger system phone notification for incoming call (wakes lock screen / notification drawer)
+  const showPhoneCallNotification = async (payload: IncomingCallPayload) => {
+    if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') {
+      return;
+    }
+
+    const title = payload.isVideo
+      ? (isFr ? `📹 Appel Vidéo entrant : ${payload.callerName}` : `📹 Incoming Video Call: ${payload.callerName}`)
+      : (isFr ? `📞 Appel Vocal entrant : ${payload.callerName}` : `📞 Incoming Voice Call: ${payload.callerName}`);
+
+    const body = isFr
+      ? `${payload.callerName} vous appelle en direct sur English Booster. Touchez pour décrocher.`
+      : `${payload.callerName} is calling you live on English Booster. Tap to answer.`;
+
+    const callUrl = `/call?partnerId=${payload.callerId}&partnerName=${encodeURIComponent(payload.callerName)}&roomId=${payload.roomId}&video=${payload.isVideo}&autoAnswer=true`;
+
+    // 1. Try via Service Worker (best on mobile / Android / background)
+    try {
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        if (reg && reg.showNotification) {
+          await reg.showNotification(title, {
+            body,
+            icon: payload.callerAvatar || '/assets/images/logo.svg',
+            badge: '/assets/images/logo.svg',
+            tag: 'eb-incoming-call',
+            data: { url: callUrl },
+            requireInteraction: true,
+            vibrate: [500, 250, 500, 250, 1000],
+          } as any);
+          return;
+        }
+      }
+    } catch {}
+
+    // 2. Fallback to standard Web Notification API
+    try {
+      const notif = new Notification(title, {
+        body,
+        icon: payload.callerAvatar || '/assets/images/logo.svg',
+        badge: '/assets/images/logo.svg',
+        tag: 'eb-incoming-call',
+        requireInteraction: true,
+      });
+
+      notif.onclick = () => {
+        window.focus();
+        notif.close();
+        router.push(callUrl);
+      };
+
+      activeNotificationRef.current = notif;
+    } catch {}
+  };
+
+  // Trigger system phone notification for incoming message
+  const showPhoneMessageNotification = async (payload: NewMessagePayload) => {
+    if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') {
+      return;
+    }
+
+    const title = isFr
+      ? `💬 Nouveau message de ${payload.senderName}`
+      : `💬 New message from ${payload.senderName}`;
+
+    const chatUrl = `/chat?partnerId=${payload.senderId}&partnerName=${encodeURIComponent(payload.senderName)}`;
+
+    try {
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        if (reg && reg.showNotification) {
+          await reg.showNotification(title, {
+            body: payload.text,
+            icon: payload.senderAvatar || '/assets/images/logo.svg',
+            badge: '/assets/images/logo.svg',
+            tag: `eb-msg-${payload.senderId}`,
+            data: { url: chatUrl },
+            vibrate: [150, 80, 150],
+          } as any);
+          return;
+        }
+      }
+    } catch {}
+
+    try {
+      const notif = new Notification(title, {
+        body: payload.text,
+        icon: payload.senderAvatar || '/assets/images/logo.svg',
+        badge: '/assets/images/logo.svg',
+        tag: `eb-msg-${payload.senderId}`,
+      });
+
+      notif.onclick = () => {
+        window.focus();
+        notif.close();
+        router.push(chatUrl);
+      };
+    } catch {}
+  };
+
+  // Request phone notification permission explicitly
+  const requestPhoneNotifications = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    try {
+      const result = await Notification.requestPermission();
+      setShowPermissionPrompt(false);
+      if (result === 'granted') {
+        playSound('success');
+        triggerVibration([100, 50, 100]);
+        // Show test confirmation
+        showPhoneMessageNotification({
+          senderId: 'eb-system',
+          senderName: 'English Booster',
+          senderAvatar: '/assets/images/logo.svg',
+          receiverId: user?.id || '',
+          text: isFr ? 'Notifications activées ! Vous recevrez vos alertes d’appels et messages.' : 'Notifications enabled! You will receive live calls and messages.',
+        });
+      }
+    } catch {}
+  };
 
   // Stop Ringing helper
   const stopRinging = () => {
@@ -46,6 +213,9 @@ export default function GlobalCallNotifier() {
       clearTimeout(autoDismissTimerRef.current);
       autoDismissTimerRef.current = null;
     }
+    // Stop device vibration
+    triggerVibration(0);
+    clearCallNotifications();
   };
 
   useEffect(() => {
@@ -61,11 +231,14 @@ export default function GlobalCallNotifier() {
 
         setIncomingCall(payload);
         playSound('call');
+        triggerVibration([500, 250, 500, 250, 1000]);
+        showPhoneCallNotification(payload);
 
-        // Loop ringtone sound every 2.8s
+        // Loop ringtone sound and phone vibration every 2.8s
         if (ringIntervalRef.current) clearInterval(ringIntervalRef.current);
         ringIntervalRef.current = setInterval(() => {
           playSound('call');
+          triggerVibration([500, 250, 500, 250, 1000]);
         }, 2800);
 
         // Auto dismiss after 32s as missed call
@@ -90,7 +263,9 @@ export default function GlobalCallNotifier() {
         }
 
         playSound('chime');
+        triggerVibration([150, 80, 150]);
         setMessageToast(payload);
+        showPhoneMessageNotification(payload);
 
         if (toastDismissTimerRef.current) clearTimeout(toastDismissTimerRef.current);
         toastDismissTimerRef.current = setTimeout(() => {
@@ -103,7 +278,7 @@ export default function GlobalCallNotifier() {
       stopRinging();
       supabase.removeChannel(channel);
     };
-  }, [user?.id, pathname, playSound, supabase]);
+  }, [user?.id, pathname, playSound, supabase, isFr]);
 
   // Accept incoming call
   const handleAcceptCall = () => {
@@ -111,7 +286,7 @@ export default function GlobalCallNotifier() {
     stopRinging();
     playSound('click');
 
-    const targetUrl = `/call?partnerId=${incomingCall.callerId}&partnerName=${encodeURIComponent(incomingCall.callerName)}&roomId=${incomingCall.roomId}&video=${incomingCall.isVideo}`;
+    const targetUrl = `/call?partnerId=${incomingCall.callerId}&partnerName=${encodeURIComponent(incomingCall.callerName)}&roomId=${incomingCall.roomId}&video=${incomingCall.isVideo}&autoAnswer=true`;
     setIncomingCall(null);
     router.push(targetUrl);
   };
@@ -260,6 +435,47 @@ export default function GlobalCallNotifier() {
                 type="button"
                 onClick={() => setMessageToast(null)}
                 className="p-1 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </aside>
+      )}
+
+      {/* 3. ONE-TAP PHONE NOTIFICATION ACTIVATION PILL */}
+      {showPermissionPrompt && (
+        <aside 
+          aria-label="Notification Permission"
+          className="fixed bottom-20 sm:bottom-6 left-3 right-3 sm:left-auto sm:right-6 z-[9980] sm:max-w-sm animate-fade-in safe-pb"
+        >
+          <div className="p-3.5 rounded-2xl bg-[#091124]/95 border border-emerald-400/40 shadow-[0_15px_40px_rgba(0,0,0,0.8)] backdrop-blur-xl flex items-center justify-between gap-3 text-white">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 shrink-0">
+                <Bell className="w-4 h-4 animate-bounce" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-bold truncate">
+                  {isFr ? "Alertes téléphone" : "Phone notifications"}
+                </p>
+                <p className="text-[10px] text-slate-400 line-clamp-1">
+                  {isFr ? "Recevoir les appels et messages de vos partenaires" : "Get incoming calls and message alerts"}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={requestPhoneNotifications}
+                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 font-black text-xs hover:scale-105 active:scale-95 transition-all shadow-md cursor-pointer"
+              >
+                {isFr ? "Activer" : "Enable"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPermissionPrompt(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
+                title="Dismiss"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
