@@ -52,6 +52,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import InvitePartnerModal from '@/components/InvitePartnerModal';
+import { useTranslation } from '@/lib/i18n';
 import type { Database } from '@/lib/database.types';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -184,7 +185,7 @@ function RealConversationContent() {
 
   const { user, profile, playSound } = useAuth();
   const supabase = createClient();
-  const isFr = typeof navigator !== 'undefined' ? (navigator.language?.startsWith('fr') ?? true) : true;
+  const { isFr } = useTranslation();
 
   // ONLY 100% real registered partners from database
   const [partners, setPartners] = useState<RealPartner[]>([]);
@@ -2320,8 +2321,9 @@ function RealConversationContent() {
 
                           {/* WhatsApp-Style Missed Call or Standard Message Bubble */}
                           {(() => {
-                            const isMissedCall = /missed\s*(voice|video)?\s*call|appel\s*(vocal|vidéo|video)?\s*manqué/i.test(msg.text);
-                            const isVideoMissed = /video|vidéo/i.test(msg.text);
+                            const rawText = msg?.text || '';
+                            const isMissedCall = /missed\s*(voice|video)?\s*call|appel\s*(vocal|vidéo|video)?\s*manqué/i.test(rawText);
+                            const isVideoMissed = /video|vidéo/i.test(rawText);
 
                             if (isMissedCall) {
                               return (
@@ -2480,7 +2482,14 @@ function RealConversationContent() {
                             </button>
 
                             <span>
-                              {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {(() => {
+                                try {
+                                  const d = msg.created_at ? new Date(msg.created_at) : new Date();
+                                  return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                } catch {
+                                  return '';
+                                }
+                              })()}
                             </span>
 
                             {/* WhatsApp Checkmarks: 2 traits bleus si lu ('read'), 1 trait si non connecté ('sent'), 2 traits gris si reçu ('delivered') */}

@@ -42,6 +42,7 @@ export default function GlobalCallNotifier() {
   const autoDismissTimerRef = useRef<NodeJS.Timeout | null>(null);
   const toastDismissTimerRef = useRef<NodeJS.Timeout | null>(null);
   const activeNotificationRef = useRef<Notification | null>(null);
+  const incomingCallRef = useRef<IncomingCallPayload | null>(null);
 
   // Register service worker on mount & check notification permissions
   useEffect(() => {
@@ -270,6 +271,7 @@ export default function GlobalCallNotifier() {
         // If current user is already in a call with this roomId, ignore
         if (pathname === '/call') return;
 
+        incomingCallRef.current = payload;
         setIncomingCall(payload);
         playSound('call');
         triggerVibration([500, 250, 500, 250, 1000]);
@@ -286,43 +288,46 @@ export default function GlobalCallNotifier() {
         if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current);
         autoDismissTimerRef.current = setTimeout(() => {
           stopRinging();
-          setIncomingCall((currentCall) => {
-            if (currentCall) {
-              const missedText = currentCall.isVideo 
-                ? (isFr ? '📹 Appel vidéo manqué' : '📹 Missed video call') 
-                : (isFr ? '📞 Appel vocal manqué' : '📞 Missed voice call');
-              showPhoneMessageNotification({
-                senderId: currentCall.callerId,
-                senderName: currentCall.callerName,
-                senderAvatar: currentCall.callerAvatar,
-                receiverId: user.id,
-                text: `${missedText} (${isFr ? 'Appuyez pour rappeler' : 'Tap to call back'})`,
-              });
-            }
-            return null;
-          });
-        }, 32000);
-      })
-      .on('broadcast', { event: 'call_ended' }, () => {
-        stopRinging();
-        setIncomingCall((currentCall) => {
-          if (currentCall) {
-            const missedText = currentCall.isVideo 
+          const activeCall = incomingCallRef.current;
+          incomingCallRef.current = null;
+          setIncomingCall(null);
+
+          if (activeCall && user?.id) {
+            const missedText = activeCall.isVideo 
               ? (isFr ? '📹 Appel vidéo manqué' : '📹 Missed video call') 
               : (isFr ? '📞 Appel vocal manqué' : '📞 Missed voice call');
             showPhoneMessageNotification({
-              senderId: currentCall.callerId,
-              senderName: currentCall.callerName,
-              senderAvatar: currentCall.callerAvatar,
+              senderId: activeCall.callerId,
+              senderName: activeCall.callerName,
+              senderAvatar: activeCall.callerAvatar,
               receiverId: user.id,
               text: `${missedText} (${isFr ? 'Appuyez pour rappeler' : 'Tap to call back'})`,
             });
           }
-          return null;
-        });
+        }, 32000);
+      })
+      .on('broadcast', { event: 'call_ended' }, () => {
+        stopRinging();
+        const activeCall = incomingCallRef.current;
+        incomingCallRef.current = null;
+        setIncomingCall(null);
+
+        if (activeCall && user?.id) {
+          const missedText = activeCall.isVideo 
+            ? (isFr ? '📹 Appel vidéo manqué' : '📹 Missed video call') 
+            : (isFr ? '📞 Appel vocal manqué' : '📞 Missed voice call');
+          showPhoneMessageNotification({
+            senderId: activeCall.callerId,
+            senderName: activeCall.callerName,
+            senderAvatar: activeCall.callerAvatar,
+            receiverId: user.id,
+            text: `${missedText} (${isFr ? 'Appuyez pour rappeler' : 'Tap to call back'})`,
+          });
+        }
       })
       .on('broadcast', { event: 'call_declined' }, () => {
         stopRinging();
+        incomingCallRef.current = null;
         setIncomingCall(null);
       })
       .on('broadcast', { event: 'new_message' }, ({ payload }: { payload: NewMessagePayload }) => {

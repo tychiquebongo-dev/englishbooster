@@ -355,7 +355,7 @@ export async function recordMissedCall({
     const { data: conv } = await supabase
       .from('conversations')
       .select('id')
-      .or(`and(participant_one.eq.${callerId},participant_two.eq.${receiverId}),and(participant_one.eq.${receiverId},participant_two.eq.${callerId})`)
+      .or(`and(participant_1.eq.${callerId},participant_2.eq.${receiverId}),and(participant_1.eq.${receiverId},participant_2.eq.${callerId})`)
       .maybeSingle();
 
     if (conv?.id) {
@@ -364,8 +364,8 @@ export async function recordMissedCall({
       const { data: newConv } = await supabase
         .from('conversations')
         .insert({
-          participant_one: callerId,
-          participant_two: receiverId,
+          participant_1: callerId,
+          participant_2: receiverId,
         })
         .select('id')
         .single();
