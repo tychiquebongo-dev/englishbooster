@@ -181,7 +181,11 @@ function RealConversationContent() {
   // Audio voice note playback
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const [audioPlaybackRate, setAudioPlaybackRate] = useState<number>(1);
+  const [audioProgress, setAudioProgress] = useState<Record<string, { currentTime: number; duration: number }>>({});
   const audioElementsRef = useRef<Record<string, HTMLAudioElement>>({});
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const recordingStartTimeRef = useRef<number>(0);
+  const chatChannelRef = useRef<any>(null);
 
   // Real Remote WebRTC Calling state (PeerJS)
   const [callActive, setCallActive] = useState(false);
@@ -402,8 +406,22 @@ function RealConversationContent() {
 
     // Supabase Realtime channel for live messages between real users
     const channelName = `real_chat_${user.id < activePartner.id ? `${user.id}_${activePartner.id}` : `${activePartner.id}_${user.id}`}`;
-    const channel = supabase
-      .channel(channelName)
+    const channel = supabase.channel(channelName);
+    chatChannelRef.current = channel;
+
+    channel
+      .on('broadcast', { event: 'chat_message' }, ({ payload }: any) => {
+        if (!payload || payload.sender_id === user.id) return;
+        setConversationMap(prev => {
+          const current = prev[activePartner.id] || [];
+          if (current.some(m => m.id === payload.id)) return prev;
+          const nextList = [...current, payload];
+          const nextMap = { ...prev, [activePartner.id]: nextList };
+          saveConversation(nextMap);
+          return nextMap;
+        });
+        playSound?.('chime');
+      })
       .on(
         'postgres_changes',
         {
@@ -440,6 +458,7 @@ function RealConversationContent() {
 
     return () => {
       isSubscribed = false;
+      chatChannelRef.current = null;
       supabase.removeChannel(channel);
     };
   }, [user?.id, activePartner?.id]);
@@ -705,6 +724,14 @@ function RealConversationContent() {
     setGrammarSuggestion(null);
     setShowEmojiPicker(false);
 
+    if (chatChannelRef.current) {
+      chatChannelRef.current.send({
+        type: 'broadcast',
+        event: 'chat_message',
+        payload: userMessage,
+      });
+    }
+
     // Save to real Supabase database
     try {
       let conversationId: string | null = null;
@@ -759,33 +786,98 @@ function RealConversationContent() {
     }
   };
 
-  // 5. Real Voice Note Recording
+  // Helper: Supported audio MIME type detection across Chrome, Safari iOS, Firefox
+  const getSupportedAudioMimeType = (): string => {
+    if (typeof window === 'undefined' || typeof MediaRecorder === 'undefined') return '';
+    const types = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus',
+      'audio/aac',
+      '',
+    ];
+    for (const t of types) {
+      if (t === '' || (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t))) {
+        return t;
+      }
+    }
+    return '';
+  };
+
+  // Helper: Format seconds to mm:ss
+  const formatAudioTime = (seconds: number) => {
+    if (isNaN(seconds) || !isFinite(seconds)) return '0:00';
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  // 5. Robust Real Voice Note Recording
   const startRecording = async () => {
     if (!user?.id) {
-      alert("Please sign in to record voice notes.");
+      alert(isFr ? "Veuillez vous connecter pour enregistrer un message vocal." : "Please sign in to record voice notes.");
+      return;
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert(isFr ? "L'enregistrement audio n'est pas supporté sur ce navigateur." : "Voice recording is not supported on this browser.");
       return;
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
+      // Clean up previous stream if any was left open
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(t => t.stop());
+        audioStreamRef.current = null;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      audioStreamRef.current = stream;
+
+      const mimeType = getSupportedAudioMimeType();
+      const options: MediaRecorderOptions = mimeType ? { mimeType } : {};
+      const recorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = recorder;
       audioChunksRef.current = [];
 
       recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
       };
 
       recorder.onstop = async () => {
         if (!activePartner) return;
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        
-        // Convert to base64 Data URL so it is fully playable on both ends
+        const targetPartnerId = activePartner.id;
+        const recordedDuration = Math.max(1, Math.round((Date.now() - recordingStartTimeRef.current) / 1000));
+
+        // Stop stream tracks immediately so mic indicator disappears
+        if (audioStreamRef.current) {
+          audioStreamRef.current.getTracks().forEach(t => t.stop());
+          audioStreamRef.current = null;
+        }
+
+        if (audioChunksRef.current.length === 0) {
+          setIsRecording(false);
+          setRecordingSeconds(0);
+          return;
+        }
+
+        const blobMime = recorder.mimeType || mimeType || 'audio/webm';
+        const audioBlob = new Blob(audioChunksRef.current, { type: blobMime });
+
+        // Convert to base64 Data URL so it is fully playable across all browsers and offline/online
         const reader = new FileReader();
         reader.readAsDataURL(audioBlob);
         reader.onloadend = async () => {
           const base64Audio = reader.result as string;
-
           playSound?.('chime');
 
           const voiceMsg: ChatMessage = {
@@ -793,17 +885,31 @@ function RealConversationContent() {
             sender_id: user.id,
             sender_name: profile?.full_name || 'You',
             sender_avatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
-            text: `🎙️ Voice Note (${recordingSeconds}s)`,
+            text: `🎙️ Voice Note (${recordedDuration}s)`,
             audio_url: base64Audio,
             created_at: new Date().toISOString(),
             status: 'sent',
           };
 
-          const targetPartnerId = activePartner.id;
-          const updated = [...(conversationMap[targetPartnerId] || []), voiceMsg];
-          saveConversation({ ...conversationMap, [targetPartnerId]: updated });
+          // Optimistic local update
+          setConversationMap(prev => {
+            const current = prev[targetPartnerId] || [];
+            const nextList = [...current, voiceMsg];
+            const nextMap = { ...prev, [targetPartnerId]: nextList };
+            saveConversation(nextMap);
+            return nextMap;
+          });
 
-          // Persist to database
+          // Immediate broadcast to partner via chat channel
+          if (chatChannelRef.current) {
+            chatChannelRef.current.send({
+              type: 'broadcast',
+              event: 'chat_message',
+              payload: voiceMsg,
+            });
+          }
+
+          // Persist to Supabase database
           try {
             let convId: string | null = null;
             const { data: convData } = await supabase
@@ -828,32 +934,34 @@ function RealConversationContent() {
               await supabase.from('messages').insert({
                 conversation_id: convId,
                 sender_id: user.id,
-                text: `🎙️ Voice Note (${recordingSeconds}s)`,
+                text: `🎙️ Voice Note (${recordedDuration}s)`,
                 audio_url: base64Audio,
               });
 
-              // Notify partner in real time
+              // Also send real-time notification alert to partner
               broadcastNewMessage({
                 senderId: user.id,
                 senderName: profile?.full_name || 'English Learner',
                 senderAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
                 receiverId: targetPartnerId,
-                text: `🎙️ Voice Note (${recordingSeconds}s)`,
+                text: `🎙️ Voice Note (${recordedDuration}s)`,
                 conversationId: convId || undefined,
+                audioUrl: base64Audio,
               });
             }
           } catch (e) {
-            console.warn(e);
+            console.warn('Database persist voice message notice:', e);
           }
         };
 
         setIsRecording(false);
         setRecordingSeconds(0);
         if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-        stream.getTracks().forEach(t => t.stop());
       };
 
-      recorder.start();
+      // Start recording with 200ms slice
+      recorder.start(200);
+      recordingStartTimeRef.current = Date.now();
       setIsRecording(true);
       setRecordingSeconds(0);
       playSound?.('click');
@@ -861,35 +969,78 @@ function RealConversationContent() {
       timerIntervalRef.current = setInterval(() => {
         setRecordingSeconds(s => s + 1);
       }, 1000);
-    } catch {
-      alert("Microphone permission is required to record voice notes.");
+    } catch (err: any) {
+      console.warn("Microphone capture error:", err);
+      alert(
+        err?.name === 'NotAllowedError'
+          ? (isFr ? "Accès microphone refusé. Veuillez autoriser le micro dans les paramètres du navigateur." : "Microphone access was denied. Please allow microphone permissions in your browser settings.")
+          : (isFr ? "Impossible d'accéder au microphone. Vérifiez votre périphérique audio." : "Could not access microphone. Please check your audio input device.")
+      );
     }
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {}
     }
   };
 
   const cancelRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.ondataavailable = null;
-      mediaRecorderRef.current.onstop = null;
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      setRecordingSeconds(0);
-      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    if (mediaRecorderRef.current) {
+      try {
+        mediaRecorderRef.current.ondataavailable = null;
+        mediaRecorderRef.current.onstop = null;
+        if (mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
+        }
+      } catch {}
     }
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach(t => t.stop());
+      audioStreamRef.current = null;
+    }
+    audioChunksRef.current = [];
+    setIsRecording(false);
+    setRecordingSeconds(0);
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
   };
 
-  // Voice note play/pause toggle
+  // Voice note play/pause toggle with live time tracking
   const togglePlayAudio = (msgId: string, audioUrl: string) => {
     let audio = audioElementsRef.current[msgId];
     if (!audio) {
       audio = new Audio(audioUrl);
+      audio.preload = 'auto';
       audio.playbackRate = audioPlaybackRate;
-      audio.onended = () => setPlayingAudioId(null);
+
+      audio.ontimeupdate = () => {
+        setAudioProgress(prev => ({
+          ...prev,
+          [msgId]: {
+            currentTime: audio.currentTime,
+            duration: audio.duration || 0,
+          }
+        }));
+      };
+
+      audio.onended = () => {
+        setPlayingAudioId(null);
+        setAudioProgress(prev => ({
+          ...prev,
+          [msgId]: {
+            currentTime: 0,
+            duration: audio.duration || 0,
+          }
+        }));
+      };
+
+      audio.onerror = (e) => {
+        console.warn('Audio playback error:', e);
+        setPlayingAudioId(null);
+      };
+
       audioElementsRef.current[msgId] = audio;
     }
 
@@ -897,11 +1048,18 @@ function RealConversationContent() {
       audio.pause();
       setPlayingAudioId(null);
     } else {
+      // Pause any currently playing audio
       if (playingAudioId && audioElementsRef.current[playingAudioId]) {
-        audioElementsRef.current[playingAudioId].pause();
+        try {
+          audioElementsRef.current[playingAudioId].pause();
+          audioElementsRef.current[playingAudioId].currentTime = 0;
+        } catch {}
       }
       audio.playbackRate = audioPlaybackRate;
-      audio.play();
+      audio.play().catch(err => {
+        console.warn('Audio play failed:', err);
+        setPlayingAudioId(null);
+      });
       setPlayingAudioId(msgId);
     }
   };
@@ -1662,29 +1820,49 @@ function RealConversationContent() {
 
                           {/* Real Voice Note Player */}
                           {msg.audio_url && (
-                            <div className="mt-2 p-2 rounded-xl bg-black/20 flex items-center gap-3">
+                            <div className="mt-2.5 p-2.5 rounded-2xl bg-black/25 border border-white/10 flex items-center gap-3 shadow-inner">
                               <button
                                 type="button"
                                 onClick={() => togglePlayAudio(msg.id, msg.audio_url!)}
-                                className="w-9 h-9 rounded-full bg-[#00a884] text-slate-950 flex items-center justify-center shrink-0 shadow-md hover:scale-105 active:scale-95 transition-all"
+                                className="w-10 h-10 rounded-full bg-[#00a884] hover:bg-[#02906f] text-slate-950 flex items-center justify-center shrink-0 shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                                title={playingAudioId === msg.id ? "Pause" : "Play"}
                               >
-                                {playingAudioId === msg.id ? <Pause className="w-4 h-4 fill-slate-950" /> : <Play className="w-4 h-4 fill-slate-950 ml-0.5" />}
+                                {playingAudioId === msg.id ? (
+                                  <Pause className="w-4 h-4 fill-slate-950" />
+                                ) : (
+                                  <Play className="w-4 h-4 fill-slate-950 ml-0.5" />
+                                )}
                               </button>
 
-                              <div className="flex-1 flex items-center gap-1 h-5">
-                                {[8, 16, 22, 14, 20, 10, 18, 12, 24, 15, 19, 11].map((h, idx) => (
-                                  <span
-                                    key={idx}
-                                    style={{ height: `${h}px` }}
-                                    className={`w-1 rounded-full transition-all ${playingAudioId === msg.id ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'}`}
-                                  />
-                                ))}
+                              <div className="flex-1 flex flex-col justify-center min-w-[120px] gap-1">
+                                {/* Waveform visualizer */}
+                                <div className="flex items-center gap-1 h-5 overflow-hidden">
+                                  {[8, 16, 22, 14, 20, 10, 18, 12, 24, 15, 19, 11, 25, 14, 20, 9].map((h, idx) => {
+                                    const isPlaying = playingAudioId === msg.id;
+                                    return (
+                                      <span
+                                        key={idx}
+                                        style={{ height: `${h}px` }}
+                                        className={`w-1 rounded-full transition-all ${
+                                          isPlaying 
+                                            ? 'bg-emerald-400 animate-pulse' 
+                                            : 'bg-white/40'
+                                        }`}
+                                      />
+                                    );
+                                  })}
+                                </div>
+                                <div className="flex items-center justify-between text-[10px] text-white/70 font-mono">
+                                  <span>{audioProgress[msg.id] ? formatAudioTime(audioProgress[msg.id].currentTime) : '0:00'}</span>
+                                  <span>{audioProgress[msg.id]?.duration ? formatAudioTime(audioProgress[msg.id].duration) : ''}</span>
+                                </div>
                               </div>
 
                               <button
                                 type="button"
                                 onClick={toggleSpeedRate}
-                                className="px-1.5 py-0.5 rounded bg-white/10 text-[10px] font-black text-white hover:bg-white/20 shrink-0"
+                                className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] font-black text-emerald-300 hover:text-white transition-colors shrink-0 cursor-pointer"
+                                title="Playback Speed"
                               >
                                 {audioPlaybackRate}x
                               </button>
@@ -1808,27 +1986,44 @@ function RealConversationContent() {
 
                 {/* Recording Bar or Input Form */}
                 {isRecording ? (
-                  <div className="p-2 rounded-xl bg-[#182229] border border-rose-500/30 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping" />
-                      <span className="text-xs font-bold text-white">
-                        Recording voice note: {Math.floor(recordingSeconds / 60)}:{recordingSeconds % 60 < 10 ? '0' : ''}{recordingSeconds % 60}
+                  <div className="p-2 sm:p-2.5 rounded-2xl bg-[#182229] border border-rose-500/40 flex items-center justify-between gap-2 sm:gap-4 shadow-lg animate-fade-in">
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                      <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping shrink-0" />
+                      <span className="text-xs sm:text-sm font-bold text-white font-mono shrink-0">
+                        {Math.floor(recordingSeconds / 60)}:{recordingSeconds % 60 < 10 ? '0' : ''}{recordingSeconds % 60}
                       </span>
+                      {/* Live recording waveform simulator */}
+                      <div className="hidden xs:flex items-center gap-1 h-5 overflow-hidden">
+                        {[10, 20, 14, 26, 18, 12, 24, 16, 28, 12, 22, 14, 8].map((h, i) => (
+                          <span
+                            key={i}
+                            className="w-1 rounded-full bg-rose-400 animate-pulse"
+                            style={{
+                              height: `${h}px`,
+                              animationDelay: `${i * 90}ms`,
+                            }}
+                          />
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                       <button
                         type="button"
                         onClick={cancelRecording}
-                        className="px-3 py-1.5 rounded-lg bg-white/10 text-slate-300 text-xs font-semibold hover:bg-white/20"
+                        className="px-3 py-1.5 rounded-xl bg-white/10 text-slate-300 text-xs font-semibold hover:bg-white/20 transition-colors flex items-center gap-1 cursor-pointer"
+                        title="Cancel recording"
                       >
-                        Cancel
+                        <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                        <span>Cancel</span>
                       </button>
                       <button
                         type="button"
                         onClick={stopRecording}
-                        className="px-4 py-1.5 rounded-lg bg-[#00a884] text-slate-950 font-bold text-xs"
+                        className="px-4 py-1.5 rounded-xl bg-[#00a884] hover:bg-[#02906f] text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                        title="Send voice note"
                       >
-                        Send
+                        <Send className="w-3.5 h-3.5 fill-slate-950" />
+                        <span>Send</span>
                       </button>
                     </div>
                   </div>

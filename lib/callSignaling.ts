@@ -21,6 +21,7 @@ export interface NewMessagePayload {
   receiverId: string;
   text: string;
   conversationId?: string;
+  audioUrl?: string;
 }
 
 /**
