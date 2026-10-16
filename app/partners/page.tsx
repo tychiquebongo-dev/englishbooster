@@ -585,7 +585,7 @@ export default function PartnersPage() {
                     </div>
 
                     {/* Actions */}
-                    <div className="grid grid-cols-1 xs:grid-cols-2 gap-2 sm:gap-2.5 pt-4 border-t border-slate-200 dark:border-white/10">
+                    <div className="grid grid-cols-2 gap-2 sm:gap-2.5 pt-3 sm:pt-4 border-t border-slate-200 dark:border-white/10">
                       <Link
                         href={`/chat?partnerId=${partner.id}&partnerName=${encodeURIComponent(partner.name)}`}
                         onClick={() => playSound('click')}

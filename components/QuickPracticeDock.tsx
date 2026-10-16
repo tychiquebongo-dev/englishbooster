@@ -77,7 +77,7 @@ export default function QuickPracticeDock() {
   return (
     <aside 
       aria-label="Quick Action Dock"
-      className="fixed bottom-4 inset-x-0 z-40 flex justify-center pointer-events-none px-3"
+      className="fixed bottom-3 sm:bottom-4 inset-x-0 z-40 flex justify-center pointer-events-none px-2 sm:px-3 safe-pb"
     >
       <div className="pointer-events-auto transition-all duration-300 transform">
         {collapsed ? (

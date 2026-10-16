@@ -242,11 +242,32 @@ a:active {
 
 /* Safe area padding utilities for mobile phones */
 .safe-pb {
-  padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0.75rem));
 }
 
 .safe-pt {
-  padding-top: max(1rem, env(safe-area-inset-top, 1rem));
+  padding-top: max(0.75rem, env(safe-area-inset-top, 0.75rem));
 }
+
+/* Fullscreen app routes like /chat and /call should avoid excess bottom layout padding */
+body:has([data-fullscreen-route="true"]) main {
+  padding-bottom: 0 !important;
+}
+
+/* Prevent iOS Safari unwanted auto-zoom on form inputs */
+@media screen and (max-width: 640px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="url"],
+  input[type="number"],
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 
 

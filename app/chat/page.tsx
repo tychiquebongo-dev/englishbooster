@@ -973,7 +973,7 @@ function RealConversationContent() {
   }, [partners, searchFilter]);
 
   return (
-    <div className="max-w-7xl mx-auto px-1.5 sm:px-4 lg:px-6 py-1.5 sm:py-3 h-[calc(100dvh-5.5rem)] min-h-[380px] flex flex-col">
+    <div data-fullscreen-route="true" className="max-w-7xl mx-auto px-1 sm:px-4 lg:px-6 py-1 sm:py-3 h-[calc(100dvh-4.25rem)] sm:h-[calc(100dvh-5.5rem)] min-h-[380px] flex flex-col overflow-hidden">
       
       {/* ============================================================== */}
       {/* INCOMING REMOTE CALL MODAL                                     */}
@@ -1751,7 +1751,7 @@ function RealConversationContent() {
               </div>
 
               {/* Compose Bar */}
-              <div className="p-2.5 sm:p-3 bg-[#202c33] border-t border-white/10 shrink-0">
+              <div className="p-2 sm:p-3 bg-[#202c33] border-t border-white/10 shrink-0 safe-pb">
                 
                 {/* AI Grammar Correction Tooltip */}
                 {grammarSuggestion && (
@@ -1881,7 +1881,7 @@ function RealConversationContent() {
                         }
                       }}
                       placeholder={user ? `Message ${activePartner.name}...` : "Sign in to send messages..."}
-                      className="flex-1 min-w-0 py-2 sm:py-2.5 px-3 sm:px-4 bg-[#2a3942] border border-transparent focus:border-emerald-500 rounded-xl text-white placeholder-slate-400 text-xs sm:text-sm focus:outline-none transition-colors"
+                      className="flex-1 min-w-0 py-2 sm:py-2.5 px-3 sm:px-4 bg-[#2a3942] border border-transparent focus:border-emerald-500 rounded-xl text-white placeholder-slate-400 text-base sm:text-sm focus:outline-none transition-colors"
                     />
 
                     {inputText.trim() ? (

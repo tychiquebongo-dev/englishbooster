@@ -393,10 +393,10 @@ function CallContent() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-6 min-h-[calc(100dvh-5rem)] md:h-[calc(100dvh-5.5rem)] flex flex-col justify-between space-y-3">
+    <div data-fullscreen-route="true" className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-2 sm:py-6 h-[calc(100dvh-4.5rem)] md:h-[calc(100dvh-5.5rem)] flex flex-col justify-between space-y-2 sm:space-y-3">
       
       {/* Top Floating Control Bar */}
-      <div className="saas-card bg-white dark:bg-[#060a14] border-slate-200 dark:border-white/10 shadow-sm p-3 sm:p-4 flex items-center justify-between z-20">
+      <div className="saas-card bg-white dark:bg-[#060a14] border-slate-200 dark:border-white/10 shadow-sm p-2.5 sm:p-4 flex items-center justify-between z-20">
         <div className="flex items-center gap-2 sm:gap-3">
           <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-rose-500 animate-ping" />
           <span className="font-mono text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white">
@@ -415,11 +415,11 @@ function CallContent() {
         </div>
       </div>
 
-      {/* Main Video Stage */}
-      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 my-2 sm:my-4 relative min-h-0">
+      {/* Main Video Stage with Mobile Picture-in-Picture (PiP) */}
+      <div className="flex-1 relative md:grid md:grid-cols-2 gap-3 sm:gap-4 my-1 sm:my-3 min-h-0 overflow-hidden rounded-2xl sm:rounded-3xl">
         
-        {/* Remote Partner Screen */}
-        <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden bg-gradient-to-b from-[#0b1329] via-[#070d1d] to-[#040814] border border-white/10 flex flex-col items-center justify-center p-4 sm:p-6 shadow-2xl min-h-[180px] xs:min-h-[220px] md:min-h-0">
+        {/* Remote Partner Screen (Full screen on mobile, 1st col on desktop) */}
+        <div className="relative w-full h-full rounded-2xl sm:rounded-3xl overflow-hidden bg-gradient-to-b from-[#0b1329] via-[#070d1d] to-[#040814] border border-white/10 flex flex-col items-center justify-center p-4 sm:p-6 shadow-2xl">
           <video
             ref={remoteVideoRef}
             autoPlay
@@ -496,23 +496,23 @@ function CallContent() {
           </div>
         </div>
 
-        {/* Local User Screen (WebRTC Live Stream) */}
-        <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden bg-slate-900 border border-white/10 flex items-center justify-center shadow-2xl min-h-[180px] xs:min-h-[220px] md:min-h-0">
+        {/* Local User Screen (Mobile Floating PiP / Desktop 2nd column) */}
+        <div className="absolute top-3 right-3 w-24 h-32 xs:w-28 xs:h-38 sm:w-36 sm:h-48 md:relative md:top-auto md:right-auto md:w-full md:h-full z-20 rounded-xl sm:rounded-3xl overflow-hidden bg-slate-900 border-2 border-emerald-400/50 md:border md:border-white/10 shadow-2xl flex items-center justify-center transition-all">
           {permissionError || !videoActive ? (
-            <div className="flex flex-col items-center gap-2 sm:gap-3 text-center p-4 sm:p-6">
+            <div className="flex flex-col items-center gap-1 sm:gap-3 text-center p-2 sm:p-6">
               {profile?.avatar_url ? (
                 <img
                   src={profile.avatar_url}
                   alt="Avatar"
-                  className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover ring-4 ring-emerald-400/50 shadow-lg"
+                  className="w-12 h-12 xs:w-14 xs:h-14 sm:w-24 sm:h-24 rounded-full object-cover ring-2 ring-emerald-400/50 shadow-lg"
                 />
               ) : (
-                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-xl sm:text-2xl font-black text-emerald-300 shadow-lg">
+                <div className="w-12 h-12 xs:w-14 xs:h-14 sm:w-24 sm:h-24 rounded-full bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-sm xs:text-base sm:text-2xl font-black text-emerald-300 shadow-lg">
                   {profile?.full_name ? profile.full_name.charAt(0).toUpperCase() : 'U'}
                 </div>
               )}
-              <p className="font-bold text-white text-xs sm:text-sm">{profile?.full_name || (isFr ? 'Vous' : 'You')}</p>
-              <p className="text-[11px] sm:text-xs text-slate-400">{isFr ? 'Caméra désactivée • Audio actif' : 'Camera off • Audio active'}</p>
+              <p className="font-bold text-white text-[10px] sm:text-sm truncate max-w-[80px] xs:max-w-none">{profile?.full_name || (isFr ? 'Vous' : 'You')}</p>
+              <p className="text-[9px] sm:text-xs text-slate-400 hidden xs:block">{isFr ? 'Caméra off' : 'Camera off'}</p>
             </div>
           ) : (
             <video
@@ -524,20 +524,20 @@ function CallContent() {
             />
           )}
 
-          <div className="absolute bottom-3 left-3 sm:bottom-6 sm:left-6 z-10">
-            <span className="px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-black/60 border border-white/20 text-white font-bold text-[11px] sm:text-xs backdrop-blur-md">
-              {profile?.full_name || (isFr ? 'Moi' : 'Me')} ({isFr ? 'Vous' : 'You'})
+          <div className="absolute bottom-1.5 left-1.5 sm:bottom-4 sm:left-4 z-10">
+            <span className="px-2 py-0.5 rounded-full bg-black/60 border border-white/20 text-white font-bold text-[9px] sm:text-xs backdrop-blur-md">
+              {isFr ? 'Vous' : 'You'}
             </span>
           </div>
         </div>
 
         {/* Floating AI Coach Discussion Prompt Overlay */}
-        <div className="md:absolute md:bottom-6 md:left-1/2 md:-translate-x-1/2 w-full md:w-11/12 max-w-xl z-20 col-span-1 md:col-span-2 pointer-events-auto">
-          <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-[#060a14]/95 border border-emerald-400/40 backdrop-blur-2xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] flex items-start gap-2.5 sm:gap-3">
+        <div className="absolute bottom-2 left-2 right-2 md:bottom-4 md:left-1/2 md:-translate-x-1/2 md:w-11/12 max-w-xl z-20 pointer-events-auto">
+          <div className="p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-[#060a14]/95 border border-emerald-400/40 backdrop-blur-2xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] flex items-start gap-2 sm:gap-3">
             <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400 shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-emerald-300">
+                <span className="text-[9px] sm:text-[11px] font-extrabold uppercase tracking-wider text-emerald-300">
                   {isFr ? 'Idée de sujet de conversation' : 'Conversation topic suggestion'}
                 </span>
                 <div className="flex items-center gap-2">

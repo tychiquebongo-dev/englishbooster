@@ -217,7 +217,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Actions (Call, Status, Plan) */}
-        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 sm:gap-3">
+        <div className="flex flex-col xs:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
           <Link
             href="/status"
             onClick={() => playSound('click')}

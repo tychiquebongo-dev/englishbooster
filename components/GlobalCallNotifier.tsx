@@ -137,7 +137,7 @@ export default function GlobalCallNotifier() {
             <div className="w-[300px] h-[300px] rounded-full bg-teal-400/20 blur-2xl animate-ping opacity-60" />
           </div>
 
-          <div className="relative w-full max-w-sm p-6 sm:p-8 rounded-3xl bg-[#070d1d]/95 border-2 border-emerald-400/50 shadow-[0_0_60px_rgba(74,222,128,0.35)] text-center space-y-6">
+          <div className="relative w-full max-w-[92vw] sm:max-w-sm p-5 sm:p-8 rounded-3xl bg-[#070d1d]/95 border-2 border-emerald-400/50 shadow-[0_0_60px_rgba(74,222,128,0.35)] text-center space-y-4 sm:space-y-6">
             
             {/* Header Badge */}
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs font-black uppercase tracking-wider animate-bounce">
@@ -150,22 +150,22 @@ export default function GlobalCallNotifier() {
             </div>
 
             {/* Caller Avatar with Triple Pulsing Rings */}
-            <div className="relative mx-auto w-28 h-28 flex items-center justify-center">
+            <div className="relative mx-auto w-24 h-24 sm:w-28 sm:h-28 flex items-center justify-center">
               <div className="absolute inset-0 rounded-full border-2 border-emerald-400 animate-ping opacity-50" />
               <div className="absolute -inset-2 rounded-full border-2 border-teal-300 animate-pulse opacity-40" />
               <img
                 src={incomingCall.callerAvatar}
                 alt={incomingCall.callerName}
-                className="relative z-10 w-24 h-24 rounded-full object-cover ring-4 ring-emerald-400 shadow-[0_0_30px_rgba(74,222,128,0.5)]"
+                className="relative z-10 w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover ring-4 ring-emerald-400 shadow-[0_0_30px_rgba(74,222,128,0.5)]"
               />
-              <span className="absolute bottom-1 right-1 z-20 text-lg bg-[#060a14] p-1 rounded-full border border-white/20 shadow">
+              <span className="absolute bottom-0 right-0 sm:bottom-1 sm:right-1 z-20 text-base sm:text-lg bg-[#060a14] p-1 rounded-full border border-white/20 shadow">
                 {incomingCall.callerFlag || '🌐'}
               </span>
             </div>
 
             {/* Caller Information */}
             <div className="space-y-1.5">
-              <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              <h3 className="text-lg sm:text-2xl font-black text-white tracking-tight">
                 {incomingCall.callerName}
               </h3>
               <p className="text-xs font-bold text-emerald-400 flex items-center justify-center gap-2">
@@ -196,12 +196,12 @@ export default function GlobalCallNotifier() {
             </div>
 
             {/* Action Buttons: Accept (Green) & Decline (Red) */}
-            <div className="grid grid-cols-2 gap-4 pt-2">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 pt-2">
               {/* Decline Button */}
               <button
                 type="button"
                 onClick={handleDeclineCall}
-                className="py-3 px-4 rounded-2xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 hover:text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
+                className="py-3.5 px-4 min-h-[48px] rounded-2xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 hover:text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
               >
                 <PhoneOff className="w-4 h-4" />
                 <span>{isFr ? 'Refuser' : 'Decline'}</span>
@@ -211,7 +211,7 @@ export default function GlobalCallNotifier() {
               <button
                 type="button"
                 onClick={handleAcceptCall}
-                className="py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 text-slate-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-[0_0_25px_rgba(74,222,128,0.5)] hover:scale-105 active:scale-95 cursor-pointer"
+                className="py-3.5 px-4 min-h-[48px] rounded-2xl bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 text-slate-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-[0_0_25px_rgba(74,222,128,0.5)] hover:scale-105 active:scale-95 cursor-pointer"
               >
                 {incomingCall.isVideo ? <Video className="w-4 h-4" /> : <Phone className="w-4 h-4" />}
                 <span>{isFr ? 'Accepter' : 'Accept'}</span>
@@ -226,7 +226,7 @@ export default function GlobalCallNotifier() {
       {messageToast && (
         <aside 
           aria-label="New Message Notification"
-          className="fixed top-5 right-4 sm:right-6 z-[9990] max-w-sm w-full animate-menu-enter"
+          className="fixed top-4 left-3 right-3 sm:left-auto sm:right-6 sm:max-w-sm z-[9990] animate-menu-enter safe-pt"
         >
           <div className="p-3.5 rounded-2xl bg-[#091124]/95 border border-emerald-500/40 shadow-[0_15px_40px_rgba(0,0,0,0.8)] backdrop-blur-xl flex items-center gap-3">
             <img

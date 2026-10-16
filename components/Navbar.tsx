@@ -419,7 +419,7 @@ export default function Navbar() {
         {/* MOBILE DROPDOWN DRAWER                                         */}
         {/* ============================================================== */}
         {mobileMenuOpen && (
-          <div className="md:hidden mt-2 w-full rounded-3xl bg-[#070d1b]/95 border border-cyan-500/20 backdrop-blur-2xl shadow-2xl p-4 animate-menu-enter">
+          <div className="md:hidden mt-2 w-full rounded-3xl bg-[#070d1b]/98 border border-cyan-500/20 backdrop-blur-2xl shadow-2xl p-4 animate-menu-enter max-h-[calc(100dvh-5.5rem)] overflow-y-auto">
             
             <div className="grid grid-cols-2 gap-2 mb-3">
               {navLinks.map((item) => (
