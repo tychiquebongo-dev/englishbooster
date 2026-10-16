@@ -325,4 +325,120 @@ export async function registerPushSubscription(userId: string) {
   return null;
 }
 
+/**
+ * Record a missed call in database (messages & calls table), notify chat in real-time, and send Web Push
+ */
+export async function recordMissedCall({
+  callerId,
+  callerName,
+  callerAvatar,
+  receiverId,
+  isVideo = false,
+  roomId,
+}: {
+  callerId: string;
+  callerName: string;
+  callerAvatar?: string;
+  receiverId: string;
+  isVideo?: boolean;
+  roomId?: string;
+}) {
+  if (typeof window === 'undefined') return;
+  const supabase = createClient();
+  const missedText = isVideo ? "📹 Missed video call" : "📞 Missed voice call";
+  const pushTitle = isVideo ? `📹 Appel vidéo manqué : ${callerName}` : `📞 Appel vocal manqué : ${callerName}`;
+  const pushBody = `${callerName} a essayé de vous appeler en direct. Touchez pour rappeler.`;
+
+  // 1. Locate or create conversation in Supabase
+  let convId: string | null = null;
+  try {
+    const { data: conv } = await supabase
+      .from('conversations')
+      .select('id')
+      .or(`and(participant_one.eq.${callerId},participant_two.eq.${receiverId}),and(participant_one.eq.${receiverId},participant_two.eq.${callerId})`)
+      .maybeSingle();
+
+    if (conv?.id) {
+      convId = conv.id;
+    } else {
+      const { data: newConv } = await supabase
+        .from('conversations')
+        .insert({
+          participant_one: callerId,
+          participant_two: receiverId,
+        })
+        .select('id')
+        .single();
+      if (newConv?.id) convId = newConv.id;
+    }
+
+    // 2. Insert Missed Call message in messages table
+    if (convId) {
+      await supabase.from('messages').insert({
+        conversation_id: convId,
+        sender_id: callerId,
+        text: missedText,
+        is_read: false,
+      });
+    }
+  } catch (err) {
+    console.warn('Error recording missed call message:', err);
+  }
+
+  // 3. Insert or update call record in calls table
+  try {
+    await supabase.from('calls').insert({
+      caller_id: callerId,
+      receiver_id: receiverId,
+      receiver_name: callerName,
+      receiver_avatar: callerAvatar || null,
+      room_id: roomId || `room_${[callerId, receiverId].sort().join('_')}_${Date.now()}`,
+      status: 'missed',
+      duration_seconds: 0,
+      fluency_score: 0,
+      xp_earned: 0,
+      topic: isVideo ? 'Missed Video Call' : 'Missed Voice Call',
+    });
+  } catch {}
+
+  // 4. Realtime broadcast to receiver's notification channel
+  try {
+    const channelName = `user-notifications-${receiverId}`;
+    const channel = supabase.channel(channelName);
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        channel.send({
+          type: 'broadcast',
+          event: 'new_message',
+          payload: {
+            senderId: callerId,
+            senderName: callerName,
+            senderAvatar: callerAvatar || '',
+            receiverId: receiverId,
+            text: missedText,
+          },
+        }).then(() => {
+          setTimeout(() => supabase.removeChannel(channel), 500);
+        });
+      }
+    });
+  } catch {}
+
+  // 5. Send Web Push Notification for phone lockscreen / background (Hors application)
+  try {
+    fetch('/api/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        receiverId,
+        type: 'message',
+        title: pushTitle,
+        body: pushBody,
+        icon: callerAvatar || '/assets/images/logo.svg',
+        url: `/chat?partner=${callerId}`,
+      }),
+    }).catch(() => {});
+  } catch {}
+}
+
 

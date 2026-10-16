@@ -286,12 +286,40 @@ export default function GlobalCallNotifier() {
         if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current);
         autoDismissTimerRef.current = setTimeout(() => {
           stopRinging();
-          setIncomingCall(null);
+          setIncomingCall((currentCall) => {
+            if (currentCall) {
+              const missedText = currentCall.isVideo 
+                ? (isFr ? '📹 Appel vidéo manqué' : '📹 Missed video call') 
+                : (isFr ? '📞 Appel vocal manqué' : '📞 Missed voice call');
+              showPhoneMessageNotification({
+                senderId: currentCall.callerId,
+                senderName: currentCall.callerName,
+                senderAvatar: currentCall.callerAvatar,
+                receiverId: user.id,
+                text: `${missedText} (${isFr ? 'Appuyez pour rappeler' : 'Tap to call back'})`,
+              });
+            }
+            return null;
+          });
         }, 32000);
       })
       .on('broadcast', { event: 'call_ended' }, () => {
         stopRinging();
-        setIncomingCall(null);
+        setIncomingCall((currentCall) => {
+          if (currentCall) {
+            const missedText = currentCall.isVideo 
+              ? (isFr ? '📹 Appel vidéo manqué' : '📹 Missed video call') 
+              : (isFr ? '📞 Appel vocal manqué' : '📞 Missed voice call');
+            showPhoneMessageNotification({
+              senderId: currentCall.callerId,
+              senderName: currentCall.callerName,
+              senderAvatar: currentCall.callerAvatar,
+              receiverId: user.id,
+              text: `${missedText} (${isFr ? 'Appuyez pour rappeler' : 'Tap to call back'})`,
+            });
+          }
+          return null;
+        });
       })
       .on('broadcast', { event: 'call_declined' }, () => {
         stopRinging();

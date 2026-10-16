@@ -36,7 +36,8 @@ import { getUserAvatar } from '@/lib/avatarHelper';
 import { 
   broadcastIncomingCall, 
   broadcastCallEnded, 
-  broadcastCallDeclined 
+  broadcastCallDeclined,
+  recordMissedCall 
 } from '@/lib/callSignaling';
 
 const DISCUSSION_PROMPTS = [
@@ -155,6 +156,40 @@ function CallContent() {
 
     return () => clearInterval(ringInterval);
   }, [callStatus, playSound]);
+
+  // 2b. Auto-timeout after 30s ringing if partner does not answer (e.g. offline partner)
+  useEffect(() => {
+    if (callStatus !== 'calling' || !isCaller) return;
+
+    const ringTimeout = setTimeout(async () => {
+      if (callStatus === 'calling') {
+        if (partnerId && user?.id) {
+          try {
+            await recordMissedCall({
+              callerId: user.id,
+              callerName: profile?.full_name || 'English Learner',
+              callerAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
+              receiverId: partnerId,
+              isVideo: isVideoParam,
+              roomId,
+            });
+          } catch (e) {
+            console.warn('Error recording missed call timeout:', e);
+          }
+        }
+        stopAllMedia();
+        setCallStatus('ended');
+        setRemoteEndedNotice(
+          isFr 
+            ? "Aucune réponse. Le partenaire est peut-être hors ligne. Une notification d'appel manqué lui a été transmise." 
+            : "No response. Partner might be offline. A missed call notification was sent."
+        );
+        setCallEnded(true);
+      }
+    }, 28000);
+
+    return () => clearTimeout(ringTimeout);
+  }, [callStatus, isCaller, partnerId, user?.id, profile, isVideoParam, roomId, isFr, stopAllMedia]);
 
   // 3. Call duration timer: strictly only ticks when call is connected
   useEffect(() => {
@@ -597,6 +632,7 @@ function CallContent() {
   const handleEndCall = async () => {
     playSound('click');
     setSavingCall(true);
+    const wasConnected = callStatus === 'connected' && durationSeconds > 0;
 
     // 1. Send immediate hangup & call_ended over open room WebSocket channel
     if (channelRef.current) {
@@ -621,49 +657,82 @@ function CallContent() {
       broadcastCallEnded(roomId, partnerId || undefined, user?.id);
     }
 
-    // 3. Stop all local tracks and close WebRTC peer connection
+    // 3. If caller hangs up before partner answers or while partner was offline/unavailable -> record missed call!
+    if (!wasConnected && isCaller && partnerId && user?.id) {
+      try {
+        await recordMissedCall({
+          callerId: user.id,
+          callerName: profile?.full_name || 'English Learner',
+          callerAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
+          receiverId: partnerId,
+          isVideo: isVideoParam,
+          roomId,
+        });
+      } catch (err) {
+        console.warn('Error recording missed call:', err);
+      }
+    }
+
+    // 4. Stop all local tracks and close WebRTC peer connection
     stopAllMedia();
     setCallStatus('ended');
 
     // Persist call session in Supabase database
     if (user?.id) {
       try {
-        const minsSpoken = Math.max(1, Math.round(durationSeconds / 60));
-        await supabase.from('calls').insert({
-          caller_id: user.id,
-          room_id: roomId,
-          receiver_id: partnerId || null,
-          receiver_name: partnerProfile?.full_name || partnerName || (isFr ? 'Partenaire de conversation' : 'Conversation partner'),
-          receiver_avatar: partnerProfile?.avatar_url || null,
-          duration_seconds: durationSeconds,
-          fluency_score: 88,
-          xp_earned: 50,
-          status: 'completed',
-          topic: DISCUSSION_PROMPTS[currentPromptIndex] || 'General English Conversation',
-        });
+        if (wasConnected) {
+          const minsSpoken = Math.max(1, Math.round(durationSeconds / 60));
+          await supabase.from('calls').insert({
+            caller_id: user.id,
+            room_id: roomId,
+            receiver_id: partnerId || null,
+            receiver_name: partnerProfile?.full_name || partnerName || (isFr ? 'Partenaire de conversation' : 'Conversation partner'),
+            receiver_avatar: partnerProfile?.avatar_url || null,
+            duration_seconds: durationSeconds,
+            fluency_score: 88,
+            xp_earned: 50,
+            status: 'completed',
+            topic: DISCUSSION_PROMPTS[currentPromptIndex] || 'General English Conversation',
+          });
 
-        if (profile) {
-          await supabase.from('profiles').update({
-            minutes_spoken: (profile.minutes_spoken || 0) + minsSpoken,
-          }).eq('id', user.id);
+          if (profile) {
+            await supabase.from('profiles').update({
+              minutes_spoken: (profile.minutes_spoken || 0) + minsSpoken,
+            }).eq('id', user.id);
 
-          await refreshProfile();
+            await refreshProfile();
+          }
+
+          try {
+            confetti({
+              particleCount: 100,
+              spread: 70,
+              origin: { y: 0.6 },
+              colors: ['#4ade80', '#60a5fa', '#f59e0b'],
+            });
+          } catch {}
+
+          playSound('success');
+        } else {
+          // Missed / Unanswered call
+          await supabase.from('calls').insert({
+            caller_id: user.id,
+            room_id: roomId,
+            receiver_id: partnerId || null,
+            receiver_name: partnerProfile?.full_name || partnerName || (isFr ? 'Partenaire de conversation' : 'Conversation partner'),
+            receiver_avatar: partnerProfile?.avatar_url || null,
+            duration_seconds: 0,
+            fluency_score: 0,
+            xp_earned: 0,
+            status: 'missed',
+            topic: isVideoParam ? 'Missed Video Call' : 'Missed Voice Call',
+          });
         }
       } catch (err) {
         console.error('Error saving call record:', err);
       }
     }
 
-    try {
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ['#4ade80', '#60a5fa', '#f59e0b'],
-      });
-    } catch {}
-
-    playSound('success');
     setSavingCall(false);
     setCallEnded(true);
   };
@@ -949,18 +1018,39 @@ function CallContent() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl animate-fadeIn">
           <div className="saas-card max-w-md w-full p-8 text-center space-y-6 bg-white dark:bg-[#0a1124] border-slate-200 dark:border-emerald-400/40 shadow-2xl">
             
-            <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-emerald-400 to-teal-300 mx-auto flex items-center justify-center text-slate-950 font-black shadow-lg">
-              <Trophy className="w-8 h-8" />
-            </div>
+            {durationSeconds > 0 ? (
+              <>
+                <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-emerald-400 to-teal-300 mx-auto flex items-center justify-center text-slate-950 font-black shadow-lg">
+                  <Trophy className="w-8 h-8" />
+                </div>
 
-            <div className="space-y-2">
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                {isFr ? "Session de Conversation Terminée" : "Conversation Session Ended"}
-              </h3>
-              <p className="text-slate-600 dark:text-slate-400 text-sm">
-                {isFr ? "Vous avez échangé pendant" : "You conversed for"} <strong className="text-slate-900 dark:text-white">{formatTimer(durationSeconds)}</strong> {isFr ? "avec" : "with"} {partnerName}.
-              </p>
-            </div>
+                <div className="space-y-2">
+                  <h3 className="text-2xl font-black text-slate-900 dark:text-white">
+                    {isFr ? "Session de Conversation Terminée" : "Conversation Session Ended"}
+                  </h3>
+                  <p className="text-slate-600 dark:text-slate-400 text-sm">
+                    {isFr ? "Vous avez échangé pendant" : "You conversed for"} <strong className="text-slate-900 dark:text-white">{formatTimer(durationSeconds)}</strong> {isFr ? "avec" : "with"} {partnerName}.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="w-16 h-16 rounded-3xl bg-rose-500/15 border border-rose-500/30 mx-auto flex items-center justify-center text-rose-400 shadow-lg">
+                  <PhoneOff className="w-8 h-8" />
+                </div>
+
+                <div className="space-y-2">
+                  <h3 className="text-2xl font-black text-slate-900 dark:text-white">
+                    {isFr ? "Appel non abouti / Manqué" : "Missed Call / Unanswered"}
+                  </h3>
+                  <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
+                    {isFr 
+                      ? `L'appel avec ${partnerName} n'a pas été décroché. Un avis d'appel manqué a été notifié dans votre chat.` 
+                      : `The call with ${partnerName} was not answered. A missed call notification was recorded in your chat.`}
+                  </p>
+                </div>
+              </>
+            )}
 
             {remoteEndedNotice && (
               <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold flex items-center justify-center gap-2">
@@ -969,31 +1059,48 @@ function CallContent() {
               </div>
             )}
 
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">{isFr ? "Temps de Parole" : "Speaking Time"}</p>
-                <p className="text-2xl font-black text-amber-500 dark:text-amber-400 mt-1">+{Math.max(1, Math.round(durationSeconds / 60))} min</p>
+            {durationSeconds > 0 && (
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">{isFr ? "Temps de Parole" : "Speaking Time"}</p>
+                  <p className="text-2xl font-black text-amber-500 dark:text-amber-400 mt-1">+{Math.max(1, Math.round(durationSeconds / 60))} min</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">{isFr ? "Score Aisance" : "Fluency Score"}</p>
+                  <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">88%</p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">{isFr ? "Score Aisance" : "Fluency Score"}</p>
-                <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">88%</p>
-              </div>
-            </div>
+            )}
 
             <div className="flex flex-col gap-3">
-              <Link
-                href="/dashboard"
-                onClick={() => playSound('click')}
-                className="w-full py-3.5 rounded-xl font-bold text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-300 hover:from-emerald-300 text-sm shadow-md"
-              >
-                {isFr ? "Retour au Tableau de Bord" : "Return to Dashboard"}
-              </Link>
+              {durationSeconds === 0 && partnerId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCallEnded(false);
+                    setCallStatus('calling');
+                    setDurationSeconds(0);
+                    router.push(`/call?partnerId=${partnerId}&partnerName=${encodeURIComponent(partnerName)}&video=${isVideoParam}&roomId=${roomId}_retry`);
+                  }}
+                  className="w-full py-3.5 rounded-xl font-bold text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-300 hover:from-emerald-300 text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Phone className="w-4 h-4" />
+                  <span>{isFr ? "Rappeler maintenant" : "Call back now"}</span>
+                </button>
+              )}
               <Link
                 href={`/chat?partnerId=${partnerId}&partnerName=${encodeURIComponent(partnerName)}`}
                 onClick={() => playSound('click')}
                 className="w-full py-3 rounded-xl border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors"
               >
-                {isFr ? "Envoyer un message de débriefing" : "Send debrief message"}
+                {isFr ? "Ouvrir le chat avec le partenaire" : "Open chat with partner"}
+              </Link>
+              <Link
+                href="/dashboard"
+                onClick={() => playSound('click')}
+                className="w-full py-3 rounded-xl border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors"
+              >
+                {isFr ? "Retour au Tableau de Bord" : "Return to Dashboard"}
               </Link>
             </div>
 

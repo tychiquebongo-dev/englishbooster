@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { getUserAvatar } from '@/lib/avatarHelper';
 import { isRealPartnerProfile } from '@/lib/partnerHelper';
-import { broadcastNewMessage, broadcastMessagesRead } from '@/lib/callSignaling';
+import { broadcastNewMessage, broadcastMessagesRead, recordMissedCall } from '@/lib/callSignaling';
 import { 
   initPeerInstance, 
   getLocalUserMedia, 
@@ -910,6 +910,47 @@ function RealConversationContent() {
     playSound?.('call');
     const roomId = `room_${[user.id, activePartner.id].sort().join('_')}_${Date.now()}`;
     router.push(`/call?partnerId=${activePartner.id}&partnerName=${encodeURIComponent(activePartner.name)}&video=${videoMode}&roomId=${roomId}`);
+  };
+
+  // Directly log and broadcast a missed call when partner is offline
+  const handleRecordMissedCallDirectly = async (videoMode: boolean) => {
+    if (!activePartner || !user?.id) return;
+    setShowOfflineCallModal(null);
+    playSound?.('click');
+
+    const missedText = videoMode ? "📹 Missed video call" : "📞 Missed voice call";
+
+    // 1. Optimistic local update in chat
+    const missedMsg: ChatMessage = {
+      id: `missed_${Date.now()}`,
+      sender_id: user.id,
+      sender_name: profile?.full_name || 'You',
+      sender_avatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
+      text: missedText,
+      created_at: new Date().toISOString(),
+      status: 'sent',
+    };
+
+    setConversationMap(prev => {
+      const current = prev[activePartner.id] || [];
+      const nextList = [...current, missedMsg];
+      const nextMap = { ...prev, [activePartner.id]: nextList };
+      saveConversation(nextMap);
+      return nextMap;
+    });
+
+    // 2. Persist to Supabase messages & calls tables, Realtime notification and Web Push
+    try {
+      await recordMissedCall({
+        callerId: user.id,
+        callerName: profile?.full_name || 'English Learner',
+        callerAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
+        receiverId: activePartner.id,
+        isVideo: videoMode,
+      });
+    } catch (err) {
+      console.warn('Error recording direct missed call:', err);
+    }
   };
 
   // End Remote Call & Save Call Summary to Database
@@ -2277,7 +2318,54 @@ function RealConversationContent() {
                             </div>
                           )}
 
-                          <p className="whitespace-pre-line text-sm break-words pr-4">{msg.text}</p>
+                          {/* WhatsApp-Style Missed Call or Standard Message Bubble */}
+                          {(() => {
+                            const isMissedCall = /missed\s*(voice|video)?\s*call|appel\s*(vocal|vidéo|video)?\s*manqué/i.test(msg.text);
+                            const isVideoMissed = /video|vidéo/i.test(msg.text);
+
+                            if (isMissedCall) {
+                              return (
+                                <div className="py-1 px-0.5 flex flex-col gap-2 min-w-[210px] sm:min-w-[250px]">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center shrink-0 text-rose-400 shadow-sm">
+                                      {isVideoMissed ? <VideoOff className="w-5 h-5 text-rose-400" /> : <PhoneOff className="w-5 h-5 text-rose-400" />}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="font-extrabold text-sm text-rose-300 flex items-center gap-1.5 leading-tight">
+                                        <span>{isVideoMissed ? (isFr ? "Appel vidéo manqué" : "Missed video call") : (isFr ? "Appel vocal manqué" : "Missed voice call")}</span>
+                                      </p>
+                                      <p className="text-[11px] text-slate-300 mt-0.5 leading-tight">
+                                        {isMe 
+                                          ? (isFr ? "Appel sortant non décroché" : "Outgoing call was not answered") 
+                                          : (isFr ? "Appel manqué • Touchez pour rappeler" : "Missed call • Tap to call back")}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  {/* WhatsApp Call Back Action Button */}
+                                  <div className="pt-2 border-t border-white/10 flex items-center justify-between">
+                                    <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
+                                      {isVideoMissed ? (isFr ? "Vidéo HD" : "HD Video") : (isFr ? "Vocal Direct" : "Direct Voice")}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleStartRemoteCall(isVideoMissed);
+                                      }}
+                                      className="px-3 py-1 rounded-full bg-[#00a884] hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer"
+                                      title={isFr ? "Rappeler ce partenaire" : "Call back partner"}
+                                    >
+                                      {isVideoMissed ? <Video className="w-3.5 h-3.5 fill-slate-950" /> : <Phone className="w-3.5 h-3.5 fill-slate-950" />}
+                                      <span>{isFr ? "Rappeler" : "Call back"}</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            return <p className="whitespace-pre-line text-sm break-words pr-4">{msg.text}</p>;
+                          })()}
 
                           {/* Real Voice Note Player */}
                           {msg.audio_url && (
@@ -2741,6 +2829,15 @@ function RealConversationContent() {
               >
                 <Phone className="w-4 h-4 fill-slate-950" />
                 <span>Lancer l&apos;appel quand même / Call Anyway</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleRecordMissedCallDirectly(showOfflineCallModal.videoMode)}
+                className="w-full py-2.5 px-4 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              >
+                <PhoneOff className="w-4 h-4 text-rose-400" />
+                <span>Laisser un avis d&apos;appel manqué / Leave Missed Call Alert</span>
               </button>
 
               <button
