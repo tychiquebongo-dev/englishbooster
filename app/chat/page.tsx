@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { getUserAvatar } from '@/lib/avatarHelper';
 import { isRealPartnerProfile } from '@/lib/partnerHelper';
-import { broadcastNewMessage } from '@/lib/callSignaling';
+import { broadcastNewMessage, broadcastMessagesRead } from '@/lib/callSignaling';
 import { 
   initPeerInstance, 
   getLocalUserMedia, 
@@ -467,6 +467,33 @@ function RealConversationContent() {
             .order('created_at', { ascending: true });
 
           if (dbMessages && isSubscribed) {
+            // Find any unread messages sent by the partner and mark them as read in Supabase
+            const unreadPartnerMsgIds = dbMessages
+              .filter(m => m.sender_id === activePartner.id && !m.is_read)
+              .map(m => m.id);
+
+            if (unreadPartnerMsgIds.length > 0) {
+              supabase
+                .from('messages')
+                .update({ is_read: true })
+                .in('id', unreadPartnerMsgIds)
+                .then(() => {});
+
+              if (chatChannelRef.current) {
+                chatChannelRef.current.send({
+                  type: 'broadcast',
+                  event: 'messages_read',
+                  payload: {
+                    reader_id: user.id,
+                    conversation_id: conv.id,
+                    message_ids: unreadPartnerMsgIds,
+                  },
+                });
+              }
+
+              broadcastMessagesRead(conv.id, user.id, activePartner.id, unreadPartnerMsgIds);
+            }
+
             const mapped: ChatMessage[] = dbMessages.map(m => {
               const isMe = m.sender_id === user.id;
               const parsed = parseMessageText(m.text);
@@ -479,8 +506,9 @@ function RealConversationContent() {
                 reply_to: parsed.replyTo,
                 audio_url: m.audio_url,
                 created_at: m.created_at,
-                // Si le partenaire n'est pas connecté: 1 trait ('sent'). Si connecté et lu: 2 traits bleus ('read'). Si connecté non-lu: 2 traits gris ('delivered')
-                status: isMe ? (activePartner.is_online ? (m.is_read ? 'read' : 'delivered') : 'sent') : 'read',
+                // Si le message a été lu par le partenaire (m.is_read): TOUJOURS 2 traits bleus ('read') !
+                // Sinon: 2 traits gris si connecté ('delivered'), 1 trait si hors ligne ('sent')
+                status: isMe ? (m.is_read ? 'read' : activePartner.is_online ? 'delivered' : 'sent') : 'read',
               };
             });
 
@@ -508,6 +536,24 @@ function RealConversationContent() {
     chatChannelRef.current = channel;
 
     channel
+      .on('broadcast', { event: 'messages_read' }, ({ payload }: any) => {
+        if (!payload || payload.reader_id === user.id) return;
+        // The partner has read our messages! Update our messages' status to 'read' (2 blue ticks)
+        setConversationMap(prev => {
+          const current = prev[activePartner.id] || [];
+          const updated = current.map(m => {
+            if (m.sender_id === user.id) {
+              if (!payload.message_ids || payload.message_ids.includes(m.id)) {
+                return { ...m, status: 'read' as const };
+              }
+            }
+            return m;
+          });
+          const nextMap = { ...prev, [activePartner.id]: updated };
+          saveConversation(nextMap);
+          return nextMap;
+        });
+      })
       .on('broadcast', { event: 'chat_message' }, ({ payload }: any) => {
         if (!payload || payload.sender_id === user.id) return;
         const parsed = parseMessageText(payload.text);
@@ -526,6 +572,23 @@ function RealConversationContent() {
           return nextMap;
         });
         playSound?.('chime');
+
+        // Since user is currently active in this conversation, mark incoming message as read immediately!
+        supabase
+          .from('messages')
+          .update({ is_read: true })
+          .eq('id', payload.id)
+          .then(() => {});
+
+        // Broadcast to sender that message was read so their 2 traits immediately become blue!
+        channel.send({
+          type: 'broadcast',
+          event: 'messages_read',
+          payload: {
+            reader_id: user.id,
+            message_ids: [payload.id],
+          },
+        });
       })
       .on(
         'postgres_changes',
@@ -558,6 +621,47 @@ function RealConversationContent() {
               return nextMap;
             });
             playSound?.('chime');
+
+            // Mark message as read and notify sender
+            supabase
+              .from('messages')
+              .update({ is_read: true })
+              .eq('id', newMsg.id)
+              .then(() => {});
+
+            channel.send({
+              type: 'broadcast',
+              event: 'messages_read',
+              payload: {
+                reader_id: user.id,
+                message_ids: [newMsg.id],
+              },
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+        },
+        async (payload) => {
+          const updatedMsg = payload.new as any;
+          if (updatedMsg && updatedMsg.is_read) {
+            setConversationMap(prev => {
+              const current = prev[activePartner.id] || [];
+              const updated = current.map(m => {
+                if (m.id === updatedMsg.id || (m.sender_id === user.id && updatedMsg.sender_id === user.id)) {
+                  return { ...m, status: 'read' as const };
+                }
+                return m;
+              });
+              const nextMap = { ...prev, [activePartner.id]: updated };
+              saveConversation(nextMap);
+              return nextMap;
+            });
           }
         }
       )
@@ -2175,16 +2279,16 @@ function RealConversationContent() {
                               {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
 
-                            {/* WhatsApp Checkmarks: 1 trait si non connecté ('sent'), 2 traits bleus si lu ('read'), 2 traits gris si reçu ('delivered') */}
+                            {/* WhatsApp Checkmarks: 2 traits bleus si lu ('read'), 1 trait si non connecté ('sent'), 2 traits gris si reçu ('delivered') */}
                             {isMe && (
                               <span className="flex items-center ml-0.5">
-                                {(!activePartner.is_online || msg.status === 'sent') ? (
+                                {msg.status === 'read' ? (
+                                  <span title="Lu par le partenaire (Deux traits bleus)">
+                                    <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />
+                                  </span>
+                                ) : (!activePartner.is_online || msg.status === 'sent') ? (
                                   <span title="Envoyé (Partenaire non connecté : 1 trait)">
                                     <Check className="w-3.5 h-3.5 text-slate-300" />
-                                  </span>
-                                ) : msg.status === 'read' ? (
-                                  <span title="Lu (Partenaire connecté : 2 traits bleus)">
-                                    <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />
                                   </span>
                                 ) : (
                                   <span title="Distribué (Partenaire connecté : 2 traits gris)">

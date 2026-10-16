@@ -219,3 +219,30 @@ export async function broadcastPartnerReady(roomId: string, userId: string) {
   });
 }
 
+/**
+ * Broadcast that messages were read by partner so sender's checkmarks turn blue immediately
+ */
+export async function broadcastMessagesRead(conversationId: string, readerId: string, partnerId: string, messageIds?: string[]) {
+  if (typeof window === 'undefined') return;
+  const supabase = createClient();
+  const channelName = `user-notifications-${partnerId}`;
+  const channel = supabase.channel(channelName);
+
+  return new Promise<void>((resolve) => {
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        channel.send({
+          type: 'broadcast',
+          event: 'messages_read',
+          payload: { conversationId, readerId, message_ids: messageIds },
+        }).then(() => {
+          setTimeout(() => {
+            supabase.removeChannel(channel);
+            resolve();
+          }, 300);
+        });
+      }
+    });
+  });
+}
+
