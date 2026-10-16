@@ -1,8 +1,17 @@
 import { updateSession } from '@/lib/supabase/middleware';
-import { type NextRequest } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 
 export async function middleware(request: NextRequest) {
-  return await updateSession(request);
+  try {
+    return await updateSession(request);
+  } catch (error) {
+    console.warn('Middleware error (safe fallback to next):', error);
+    return NextResponse.next({
+      request: {
+        headers: request.headers,
+      },
+    });
+  }
 }
 
 export const config = {
@@ -13,8 +22,8 @@ export const config = {
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - assets/* (public assets)
-     * - public files with extensions (.svg, .png, .jpg, .webp, .mp3, .wav)
+     * - public files with extensions (.svg, .png, .jpg, .jpeg, .gif, .webp, .ico, .mp3, .wav, .txt, .json)
      */
-    '/((?!_next/static|_next/image|favicon.ico|assets/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|mp3|wav)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|assets/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|mp3|wav|txt|json)$).*)',
   ],
 };
