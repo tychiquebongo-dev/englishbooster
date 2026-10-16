@@ -96,6 +96,7 @@ function CallContent() {
   const streamRef = useRef<MediaStream | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const channelRef = useRef<any>(null);
+  const userChannelRef = useRef<any>(null);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const hasOfferedRef = useRef<boolean>(false);
 
@@ -112,6 +113,15 @@ function CallContent() {
       pcRef.current = null;
     }
   }, []);
+
+  // Handle remote partner hanging up or disconnecting
+  const handleRemoteHangup = useCallback(() => {
+    playSound('chime');
+    setRemoteEndedNotice(isFr ? 'Votre interlocuteur a raccroché ou a mis fin à l\'appel.' : 'Your partner has ended the call.');
+    stopAllMedia();
+    setCallStatus('ended');
+    setCallEnded(true);
+  }, [isFr, playSound, stopAllMedia]);
 
   // 1. Fetch partner profile from database
   useEffect(() => {
@@ -217,6 +227,12 @@ function CallContent() {
 
         setHasRemoteStream(true);
         setCallStatus('connected');
+
+        // Automatically disconnect if remote track ends
+        event.track.onended = () => {
+          console.log('Remote media track ended by partner');
+          handleRemoteHangup();
+        };
       };
 
       // Listen for local ICE candidates to transmit to partner
@@ -234,15 +250,30 @@ function CallContent() {
         }
       };
 
+      // Realtime peer connection state listener
       pc.onconnectionstatechange = () => {
         console.log('RTCPeerConnection state:', pc.connectionState);
         if (pc.connectionState === 'connected') {
           setHasRemoteStream(true);
           setCallStatus('connected');
-        } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-          if (callStatus === 'connected') {
-            setRemoteEndedNotice(isFr ? 'Connexion interrompue.' : 'Call connection lost.');
-          }
+        } else if (
+          pc.connectionState === 'disconnected' || 
+          pc.connectionState === 'failed' || 
+          pc.connectionState === 'closed'
+        ) {
+          handleRemoteHangup();
+        }
+      };
+
+      // ICE connection state listener
+      pc.oniceconnectionstatechange = () => {
+        console.log('RTCPeerConnection ICE state:', pc.iceConnectionState);
+        if (
+          pc.iceConnectionState === 'disconnected' || 
+          pc.iceConnectionState === 'failed' || 
+          pc.iceConnectionState === 'closed'
+        ) {
+          handleRemoteHangup();
         }
       };
 
@@ -253,6 +284,12 @@ function CallContent() {
         if (!currentPC) return;
 
         switch (payload.type) {
+          case 'hangup':
+          case 'call_ended':
+            console.log('Received hangup signal via WebRTC signaling');
+            handleRemoteHangup();
+            break;
+
           case 'partner_ready':
             // Partner is in room and ready for handshake.
             // If we are Caller, initiate the SDP Offer!
@@ -356,11 +393,8 @@ function CallContent() {
           handleWebRTCSignal(payload);
         })
         .on('broadcast', { event: 'call_ended' }, () => {
-          playSound('chime');
-          setRemoteEndedNotice(isFr ? 'Votre partenaire a mis fin à l\'appel.' : 'Your partner has ended the call.');
-          stopAllMedia();
-          setCallStatus('ended');
-          setCallEnded(true);
+          console.log('Room broadcast call_ended received');
+          handleRemoteHangup();
         })
         .on('broadcast', { event: 'call_declined' }, () => {
           playSound('chime');
@@ -391,6 +425,28 @@ function CallContent() {
             });
           }
         });
+
+      // E. Subscribe to user's personal notifications channel as instant redundancy
+      const userChannel = supabase.channel(`user-notifications-${user.id}`);
+      userChannelRef.current = userChannel;
+
+      userChannel
+        .on('broadcast', { event: 'call_ended' }, () => {
+          console.log('User personal notification call_ended received');
+          handleRemoteHangup();
+        })
+        .on('broadcast', { event: 'webrtc_signal' }, ({ payload }: any) => {
+          if (payload?.type === 'hangup') {
+            console.log('User personal notification hangup signal received');
+            handleRemoteHangup();
+          }
+        })
+        .on('broadcast', { event: 'call_declined' }, () => {
+          playSound('chime');
+          stopAllMedia();
+          setCallStatus('declined');
+        })
+        .subscribe();
     };
 
     initializeCall();
@@ -409,12 +465,63 @@ function CallContent() {
     return () => {
       isMounted = false;
       clearInterval(readyInterval);
+
+      // Notify partner immediately if user leaves call room
+      if (channelRef.current) {
+        try {
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'call_ended',
+            payload: { roomId, senderId: user?.id },
+          });
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'webrtc_signal',
+            payload: { type: 'hangup', from: user?.id, roomId },
+          });
+        } catch {}
+      }
+      if (roomId && partnerId && user?.id) {
+        broadcastCallEnded(roomId, partnerId, user.id);
+      }
+
       stopAllMedia();
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
       }
+      if (userChannelRef.current) {
+        supabase.removeChannel(userChannelRef.current);
+      }
     };
-  }, [user?.id, roomId, isCaller, partnerId, isVideoParam, profile, isFr, playSound, stopAllMedia, supabase]);
+  }, [user?.id, roomId, isCaller, partnerId, isVideoParam, profile, isFr, playSound, stopAllMedia, handleRemoteHangup, supabase]);
+
+  // Window beforeunload listener so tab close immediately terminates call on partner device
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (channelRef.current) {
+        try {
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'call_ended',
+            payload: { roomId, senderId: user?.id },
+          });
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'webrtc_signal',
+            payload: { type: 'hangup', from: user?.id, roomId },
+          });
+        } catch {}
+      }
+      if (roomId && partnerId && user?.id) {
+        broadcastCallEnded(roomId, partnerId, user.id);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [roomId, partnerId, user?.id]);
 
   // Toggle Microphone
   const toggleMic = () => {
@@ -490,14 +597,33 @@ function CallContent() {
   const handleEndCall = async () => {
     playSound('click');
     setSavingCall(true);
-    setCallStatus('ended');
 
-    // Broadcast call_ended to room & partner
+    // 1. Send immediate hangup & call_ended over open room WebSocket channel
+    if (channelRef.current) {
+      try {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'call_ended',
+          payload: { roomId, senderId: user?.id },
+        });
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'webrtc_signal',
+          payload: { type: 'hangup', from: user?.id, roomId },
+        });
+      } catch (e) {
+        console.warn('Error sending immediate call_ended:', e);
+      }
+    }
+
+    // 2. Broadcast to partner's personal notifications channel as backup
     if (roomId) {
       broadcastCallEnded(roomId, partnerId || undefined, user?.id);
     }
 
+    // 3. Stop all local tracks and close WebRTC peer connection
     stopAllMedia();
+    setCallStatus('ended');
 
     // Persist call session in Supabase database
     if (user?.id) {

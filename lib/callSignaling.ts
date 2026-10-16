@@ -76,21 +76,7 @@ export async function broadcastCallEnded(roomId: string, partnerId?: string, sen
   if (typeof window === 'undefined') return;
   const supabase = createClient();
 
-  // 1. Broadcast to the room channel
-  const roomChannel = supabase.channel(`call-room-${roomId}`);
-  roomChannel.subscribe((status) => {
-    if (status === 'SUBSCRIBED') {
-      roomChannel.send({
-        type: 'broadcast',
-        event: 'call_ended',
-        payload: { roomId, senderId },
-      }).then(() => {
-        setTimeout(() => supabase.removeChannel(roomChannel), 300);
-      });
-    }
-  });
-
-  // 2. Broadcast directly to partner's personal notification channel as redundancy
+  // 1. Broadcast directly to partner's personal notification channel
   if (partnerId) {
     const partnerChannel = supabase.channel(`user-notifications-${partnerId}`);
     partnerChannel.subscribe((status) => {
@@ -99,12 +85,34 @@ export async function broadcastCallEnded(roomId: string, partnerId?: string, sen
           type: 'broadcast',
           event: 'call_ended',
           payload: { roomId, senderId },
+        });
+        partnerChannel.send({
+          type: 'broadcast',
+          event: 'webrtc_signal',
+          payload: { type: 'hangup', from: senderId, roomId },
         }).then(() => {
-          setTimeout(() => supabase.removeChannel(partnerChannel), 300);
+          setTimeout(() => supabase.removeChannel(partnerChannel), 800);
         });
       }
     });
   }
+
+  // 2. Broadcast to the room channel
+  const roomChannel = supabase.channel(`call-room-${roomId}`);
+  roomChannel.subscribe((status) => {
+    if (status === 'SUBSCRIBED') {
+      roomChannel.send({
+        type: 'broadcast',
+        event: 'call_ended',
+        payload: { roomId, senderId },
+      });
+      roomChannel.send({
+        type: 'broadcast',
+        event: 'webrtc_signal',
+        payload: { type: 'hangup', from: senderId, roomId },
+      });
+    }
+  });
 
   // 3. Update call record in database
   try {
