@@ -273,6 +273,7 @@ function RealConversationContent() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
 
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -284,7 +285,13 @@ function RealConversationContent() {
   const scrollToMessage = (msgId: string) => {
     const el = document.getElementById(`msg-${msgId}`);
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (messagesContainerRef.current) {
+        const container = messagesContainerRef.current;
+        const targetTop = el.offsetTop - container.offsetTop - (container.clientHeight / 2) + (el.clientHeight / 2);
+        container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+      } else {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       setHighlightedMsgId(msgId);
       setTimeout(() => {
         setHighlightedMsgId(prev => (prev === msgId ? null : prev));
@@ -419,10 +426,32 @@ function RealConversationContent() {
     return conversationMap[activePartner.id] || [];
   }, [activePartner, conversationMap]);
 
-  // Auto-scroll to bottom of conversation
+  // Auto-scroll to bottom of conversation inside the scroll container
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    if (messagesContainerRef.current) {
+      const container = messagesContainerRef.current;
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior,
+      });
+    } else if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior });
+    }
+  };
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const timer = setTimeout(() => {
+      scrollToBottom(currentMessages.length > 5 ? 'smooth' : 'auto');
+    }, 60);
+    return () => clearTimeout(timer);
   }, [currentMessages]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      scrollToBottom('auto');
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [activePartnerId, mobileShowChat]);
 
   const saveConversation = (updatedMap: Record<string, ChatMessage[]>) => {
     setConversationMap(updatedMap);
@@ -1339,7 +1368,7 @@ function RealConversationContent() {
   }, [partners, searchFilter]);
 
   return (
-    <div data-fullscreen-route="true" className="w-full max-w-7xl mx-auto px-0 md:px-4 lg:px-6 py-0 md:py-3 h-[calc(100dvh-3.5rem)] sm:h-[calc(100dvh-4rem)] md:h-[calc(100dvh-5.5rem)] flex flex-col overflow-hidden">
+    <div data-fullscreen-route="true" className="w-full max-w-7xl mx-auto px-0 md:px-4 lg:px-6 py-0 md:py-3 h-[calc(100dvh-3.5rem)] sm:h-[calc(100dvh-4rem)] md:h-[calc(100dvh-5.5rem)] flex flex-col min-h-0 overflow-hidden">
       
       {/* ============================================================== */}
       {/* INCOMING REMOTE CALL MODAL                                     */}
@@ -1747,12 +1776,12 @@ function RealConversationContent() {
       {/* ============================================================== */}
       {/* WHATSAPP CONTAINER (Real Sidebar + Real Discussion Stage)      */}
       {/* ============================================================== */}
-      <div className="flex-1 grid grid-cols-1 md:grid-cols-12 overflow-hidden rounded-none md:rounded-2xl border-0 md:border md:border-white/10 bg-[#111b21] shadow-2xl h-full">
+      <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-12 grid-rows-1 overflow-hidden rounded-none md:rounded-2xl border-0 md:border md:border-white/10 bg-[#111b21] shadow-2xl h-full">
         
         {/* ============================================================ */}
         {/* LEFT COLUMN: REAL MEMBERS DIRECTORY                          */}
         {/* ============================================================ */}
-        <aside className={`md:col-span-5 lg:col-span-4 flex flex-col border-r border-white/10 bg-[#111b21] ${mobileShowChat ? 'hidden md:flex' : 'flex'}`}>
+        <aside className={`md:col-span-5 lg:col-span-4 flex flex-col h-full min-h-0 overflow-hidden border-r border-white/10 bg-[#111b21] ${mobileShowChat ? 'hidden md:flex' : 'flex'}`}>
           
           {/* Header */}
           <div className="h-14 sm:h-16 px-3.5 sm:px-4 bg-[#202c33] flex items-center justify-between border-b border-white/10 shrink-0">
@@ -1810,7 +1839,7 @@ function RealConversationContent() {
           </div>
 
           {/* Real Registered Members List */}
-          <div className="flex-1 overflow-y-auto divide-y divide-white/5 scrollbar-thin">
+          <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-white/5 scrollbar-thin chat-scroll-container">
             {loadingPartners ? (
               <div className="p-8 text-center">
                 <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
@@ -1911,7 +1940,7 @@ function RealConversationContent() {
         {/* ============================================================ */}
         {/* RIGHT COLUMN: REAL CONVERSATION VIEW & REMOTE WEBRTC CALLS  */}
         {/* ============================================================ */}
-        <section className={`md:col-span-7 lg:col-span-8 flex flex-col h-full bg-[#0b141a] ${mobileShowChat ? 'flex' : 'hidden md:flex'}`}>
+        <section className={`md:col-span-7 lg:col-span-8 flex flex-col h-full min-h-0 overflow-hidden bg-[#0b141a] ${mobileShowChat ? 'flex' : 'hidden md:flex'}`}>
           
           {activePartner ? (
             <>
@@ -2006,10 +2035,13 @@ function RealConversationContent() {
 
               {/* Real Messages Feed */}
               <div 
-                className="flex-1 overflow-y-auto px-2.5 py-3 sm:px-5 sm:py-4 space-y-2.5 sm:space-y-3 relative overscroll-contain"
+                ref={messagesContainerRef}
+                className="flex-1 min-h-0 overflow-y-auto px-2.5 py-3 sm:px-5 sm:py-4 space-y-2.5 sm:space-y-3 relative overscroll-contain chat-scroll-container"
                 style={{
                   backgroundColor: '#0b141a',
                   backgroundImage: `radial-gradient(circle at 50% 50%, rgba(0, 168, 132, 0.04) 0%, transparent 60%)`,
+                  WebkitOverflowScrolling: 'touch',
+                  touchAction: 'pan-y',
                 }}
               >
                 <div className="flex justify-center my-1 sticky top-2 z-10">
@@ -2046,6 +2078,7 @@ function RealConversationContent() {
                       >
                         <div
                           onClick={() => setSelectedMsgId(prev => prev === msg.id ? null : msg.id)}
+                          style={{ touchAction: 'pan-y' }}
                           className={`relative max-w-[85%] sm:max-w-md px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed shadow-md group/bubble cursor-pointer select-text transition-all ${
                             isMe
                               ? 'bg-[#005c4b] text-white rounded-tr-none'
