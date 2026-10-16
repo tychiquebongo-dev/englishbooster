@@ -2,18 +2,18 @@
   "name": "English Booster : Connect. Speak. Improve.",
   "short_name": "English Booster",
   "description": "Plateforme internationale d'immersion et de pratique orale de l'anglais en temps réel. Accessible sur mobile, ordinateur et tablette.",
-  "start_url": "/index.html",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#030712",
-  "theme_color": "#030712",
+  "background_color": "#060a14",
+  "theme_color": "#060a14",
   "lang": "fr-FR",
   "dir": "ltr",
   "categories": ["education", "social", "productivity"],
   "icons": [
     {
-      "src": "assets/images/logo.svg",
+      "src": "/assets/images/logo.svg",
       "sizes": "48x48 72x72 96x96 128x128 192x192 256x256 512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"
@@ -24,29 +24,29 @@
       "name": "Watch Videos Shorts",
       "short_name": "Shorts",
       "description": "Regarder et publier des vidéos shorts en anglais",
-      "url": "/pages/watch.html",
-      "icons": [{ "src": "assets/images/logo.svg", "sizes": "96x96" }]
+      "url": "/shorts",
+      "icons": [{ "src": "/assets/images/logo.svg", "sizes": "96x96" }]
     },
     {
       "name": "Trouver des Partenaires",
       "short_name": "Partenaires",
       "description": "Trouver des partenaires de conversation du monde entier",
-      "url": "/pages/partners.html",
-      "icons": [{ "src": "assets/images/logo.svg", "sizes": "96x96" }]
+      "url": "/partners",
+      "icons": [{ "src": "/assets/images/logo.svg", "sizes": "96x96" }]
     },
     {
-      "name": "Inscrivez-vous",
-      "short_name": "Inscription",
-      "description": "Formulaire d'inscription rapide (NOM, Prénom, Email)",
-      "url": "/pages/inscrits.html",
-      "icons": [{ "src": "assets/images/logo.svg", "sizes": "96x96" }]
-    },
-    {
-      "name": "Live Call 1-to-1",
-      "short_name": "Appel Direct",
+      "name": "Live Rooms 1-to-1",
+      "short_name": "Live Call",
       "description": "Lancer un appel vidéo ou audio en direct",
-      "url": "/pages/call.html",
-      "icons": [{ "src": "assets/images/logo.svg", "sizes": "96x96" }]
+      "url": "/call",
+      "icons": [{ "src": "/assets/images/logo.svg", "sizes": "96x96" }]
+    },
+    {
+      "name": "Chat & Conversation",
+      "short_name": "Chat",
+      "description": "Messagerie instantanée et pratique écrite / vocale",
+      "url": "/chat",
+      "icons": [{ "src": "/assets/images/logo.svg", "sizes": "96x96" }]
     }
   ]
 }

@@ -131,12 +131,11 @@ Then navigate to `http://localhost:3000`.
 
 ---
 
-## ⚡ Demo Quick-Login Profiles
+## ⚡ Real Registered Community Profiles
 
-To facilitate rapid testing and client demonstrations, the login page (`pages/login.html`) includes 1-click test profiles:
-- **Sofia Martínez**: B1 Intermediate (Spain 🇪🇸)
+The platform displays genuine real registered profiles from the database:
 - **Tychique Bongo**: Founder & C2 Proficient (Ivory Coast 🇨🇮)
-- **Kenji Sato**: B2 Upper Intermediate (Japan 🇯🇵)
+- Real registered members practicing spoken English in real time.
 
 ---
 

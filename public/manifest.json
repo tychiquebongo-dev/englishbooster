@@ -1,0 +1,52 @@
+{
+  "name": "English Booster : Connect. Speak. Improve.",
+  "short_name": "English Booster",
+  "description": "Plateforme internationale d'immersion et de pratique orale de l'anglais en temps réel. Accessible sur mobile, ordinateur et tablette.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#060a14",
+  "theme_color": "#060a14",
+  "lang": "fr-FR",
+  "dir": "ltr",
+  "categories": ["education", "social", "productivity"],
+  "icons": [
+    {
+      "src": "/assets/images/logo.svg",
+      "sizes": "48x48 72x72 96x96 128x128 192x192 256x256 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Watch Videos Shorts",
+      "short_name": "Shorts",
+      "description": "Regarder et publier des vidéos shorts en anglais",
+      "url": "/shorts",
+      "icons": [{ "src": "/assets/images/logo.svg", "sizes": "96x96" }]
+    },
+    {
+      "name": "Trouver des Partenaires",
+      "short_name": "Partenaires",
+      "description": "Trouver des partenaires de conversation du monde entier",
+      "url": "/partners",
+      "icons": [{ "src": "/assets/images/logo.svg", "sizes": "96x96" }]
+    },
+    {
+      "name": "Live Rooms 1-to-1",
+      "short_name": "Live Call",
+      "description": "Lancer un appel vidéo ou audio en direct",
+      "url": "/call",
+      "icons": [{ "src": "/assets/images/logo.svg", "sizes": "96x96" }]
+    },
+    {
+      "name": "Chat & Conversation",
+      "short_name": "Chat",
+      "description": "Messagerie instantanée et pratique écrite / vocale",
+      "url": "/chat",
+      "icons": [{ "src": "/assets/images/logo.svg", "sizes": "96x96" }]
+    }
+  ]
+}
