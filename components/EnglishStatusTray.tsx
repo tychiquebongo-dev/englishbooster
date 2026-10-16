@@ -23,9 +23,11 @@ import {
   CheckCircle2,
   AlertCircle,
   Trash2,
-  Keyboard as KeyboardIcon
+  Keyboard as KeyboardIcon,
+  ShieldCheck
 } from 'lucide-react';
 import EnglishVirtualKeyboard from '@/components/EnglishVirtualKeyboard';
+import { verifyTextLinguisticEnglish } from '@/lib/aiVideoModeration';
 
 export interface EnglishStatus {
   id: string;
@@ -188,6 +190,18 @@ export default function EnglishStatusTray() {
     if (!textContent.trim() && !videoFile) {
       alert(isFr ? 'Veuillez ajouter un texte ou une vidéo.' : 'Please add text or video.');
       return;
+    }
+
+    // Enforce English Sentinel AI Moderation
+    if (textContent.trim()) {
+      const verification = verifyTextLinguisticEnglish(textContent.trim());
+      if (!verification.isEnglish) {
+        playSound('click');
+        alert(isFr 
+          ? `🛡️ Agent IA English Sentinel : Publication refusée !\n\n${verification.reasonFr}\n\nEnglish Booster est un espace 100% anglophone. Veuillez publier votre statut ou vidéo exclusivement en langue anglaise.`
+          : `🛡️ English Sentinel AI : Publication blocked!\n\n${verification.reason}\n\nEnglish Booster requires all statuses and videos to be 100% in English.`);
+        return;
+      }
     }
 
     setSubmitting(true);

@@ -52,6 +52,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import InvitePartnerModal from '@/components/InvitePartnerModal';
+import EnglishVirtualKeyboard from '@/components/EnglishVirtualKeyboard';
 import type { Database } from '@/lib/database.types';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -390,6 +391,7 @@ function RealConversationContent() {
               }
             } else {
               setActivePartnerId(realList[0].id);
+              setMobileShowChat(true);
             }
           } else {
             setActivePartnerId(null);
@@ -2376,20 +2378,50 @@ function RealConversationContent() {
                   </div>
                 )}
 
-                {/* English Keyboard Contractions Chips */}
-                {showEnglishKeyboard && (
-                  <div className="mb-2 p-1 rounded-lg bg-[#111b21] border border-white/10 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-                    <span className="text-[10px] font-black text-[#00a884] px-1.5 shrink-0">🇬🇧 EN:</span>
-                    {ENGLISH_KEYBOARD_SHORTCUTS.map((item, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => handleInsertEnglishText(item)}
-                        className="shrink-0 px-2 py-0.5 rounded bg-[#202c33] hover:bg-[#2a3942] text-xs font-semibold text-white border border-white/5"
-                      >
-                        {item}
-                      </button>
-                    ))}
+                {/* English Virtual Keyboard QWERTY (Always Accessible & Interactive) */}
+                {showEnglishKeyboard ? (
+                  <div className="mb-2 animate-fade-in">
+                    <EnglishVirtualKeyboard
+                      isOpen={true}
+                      onToggle={() => setShowEnglishKeyboard(false)}
+                      onInsertText={(text) => {
+                        setInputText(prev => prev + text);
+                        inputRef.current?.focus();
+                      }}
+                      onDeleteChar={() => {
+                        setInputText(prev => prev.slice(0, -1));
+                        inputRef.current?.focus();
+                      }}
+                      onClear={() => {
+                        setInputText('');
+                        inputRef.current?.focus();
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="mb-2 flex items-center justify-between gap-2 overflow-x-auto scrollbar-none py-1">
+                    <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                      <span className="text-[10px] font-black text-[#00a884] px-1.5 shrink-0">🇬🇧 EN:</span>
+                      {ENGLISH_KEYBOARD_SHORTCUTS.slice(0, 8).map((item, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleInsertEnglishText(item)}
+                          className="shrink-0 px-2 py-0.5 rounded bg-[#202c33] hover:bg-[#2a3942] text-xs font-semibold text-white border border-white/5 active:scale-95 transition-all"
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowEnglishKeyboard(true)}
+                      className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer ml-auto"
+                      title="Ouvrir le Clavier Anglais QWERTY"
+                    >
+                      <Keyboard className="w-3.5 h-3.5" />
+                      <span className="hidden xs:inline">Clavier Anglais</span>
+                    </button>
                   </div>
                 )}
 
@@ -2470,8 +2502,8 @@ function RealConversationContent() {
                     <button
                       type="button"
                       onClick={() => setShowEnglishKeyboard(!showEnglishKeyboard)}
-                      className={`p-1.5 sm:p-2 transition-colors shrink-0 ${showEnglishKeyboard ? 'text-[#00a884]' : 'text-slate-400 hover:text-white'}`}
-                      title="English Keyboard Shortcuts"
+                      className={`p-1.5 sm:p-2 transition-all rounded-lg shrink-0 ${showEnglishKeyboard ? 'text-slate-950 bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.4)]' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}
+                      title={showEnglishKeyboard ? "Masquer le Clavier Anglais" : "Afficher le Clavier Anglais QWERTY"}
                     >
                       <Keyboard className="w-5 h-5" />
                     </button>
@@ -2485,6 +2517,9 @@ function RealConversationContent() {
                       autoCapitalize="sentences"
                       inputMode="text"
                       value={inputText}
+                      onFocus={() => {
+                        inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                      }}
                       onChange={(e) => {
                         const val = e.target.value;
                         setInputText(val);

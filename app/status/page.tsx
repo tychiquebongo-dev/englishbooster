@@ -26,9 +26,11 @@ import {
   Volume2,
   Trash2,
   Keyboard as KeyboardIcon,
-  Send
+  Send,
+  ShieldCheck
 } from 'lucide-react';
 import EnglishVirtualKeyboard from '@/components/EnglishVirtualKeyboard';
+import { verifyTextLinguisticEnglish } from '@/lib/aiVideoModeration';
 
 export default function StatusSpacePage() {
   const { user, profile, playSound, isAdmin } = useAuth();
@@ -155,6 +157,16 @@ export default function StatusSpacePage() {
       return;
     }
     if (!quickText.trim()) return;
+
+    // Strict English Sentinel AI Moderation
+    const verification = verifyTextLinguisticEnglish(quickText.trim());
+    if (!verification.isEnglish) {
+      playSound('click');
+      alert(isFr 
+        ? `🛡️ Agent IA English Sentinel : Publication refusée !\n\n${verification.reasonFr}\n\nEnglish Booster requiert que tous les statuts soient strictement rédigés en anglais.`
+        : `🛡️ English Sentinel AI : Publication blocked!\n\n${verification.reason}\n\nEnglish Booster requires all statuses to be 100% in English.`);
+      return;
+    }
 
     setQuickSubmitting(true);
     playSound('click');

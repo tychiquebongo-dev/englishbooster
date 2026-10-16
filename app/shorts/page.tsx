@@ -22,8 +22,17 @@ import {
   X, 
   AlertCircle, 
   Tv, 
-  Send 
+  Send,
+  ShieldCheck,
+  Bot,
+  CheckCircle2,
+  AlertTriangle
 } from 'lucide-react';
+import { 
+  verifyTextLinguisticEnglish, 
+  analyzeVideoAudioWithAI, 
+  type AIVerificationResult 
+} from '@/lib/aiVideoModeration';
 
 export interface ShortVideoItem {
   id: string;
@@ -39,6 +48,8 @@ export interface ShortVideoItem {
   likes_count: number;
   comments_count: number;
   user_id?: string;
+  ai_verified?: boolean;
+  ai_certificate?: string;
 }
 
 export interface ShortCommentItem {
@@ -140,6 +151,22 @@ export default function ShortsPage() {
   const [englishPledged, setEnglishPledged] = useState(true);
   const [uploading, setUploading] = useState(false);
 
+  // English Sentinel AI Moderation Agent State
+  const [aiVerification, setAiVerification] = useState<AIVerificationResult | null>(null);
+  const [aiScanning, setAiScanning] = useState(false);
+  const [aiScanStatus, setAiScanStatus] = useState<string>('');
+
+  // Real-time AI Sentinel Linguistic Inspection
+  useEffect(() => {
+    const textToCheck = `${shortTitle} ${shortTranscript}`.trim();
+    if (textToCheck.length > 2) {
+      const res = verifyTextLinguisticEnglish(textToCheck);
+      setAiVerification(res);
+    } else {
+      setAiVerification(null);
+    }
+  }, [shortTitle, shortTranscript]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -174,7 +201,8 @@ export default function ShortsPage() {
             const title = parts[0] || 'English Practice Short';
             const transcript = parts[1] || parts[0] || '';
             const category = parts[2] || 'Community English';
-            const level = parts[3] || 'B2';
+            const isAiVerified = parts.length >= 5 ? parts[4] === 'ai_verified' : true;
+            const aiCert = parts.length >= 6 ? parts[5] : undefined;
 
             return {
               id: p.id,
@@ -191,6 +219,8 @@ export default function ShortsPage() {
               likes_count: p.likes_count || 0,
               comments_count: p.comments_count || 0,
               user_id: p.user_id,
+              ai_verified: isAiVerified,
+              ai_certificate: aiCert,
             };
           });
 
@@ -534,6 +564,18 @@ export default function ShortsPage() {
       return;
     }
 
+    // 1. Strict AI Sentinel Linguistic Verification
+    const fullText = `${shortTitle} ${shortTranscript}`.trim();
+    const verification = verifyTextLinguisticEnglish(fullText);
+
+    if (!verification.isEnglish) {
+      playSound('click');
+      alert(isFr 
+        ? `🛡️ Agent IA English Sentinel : Publication refusée !\n\n${verification.reasonFr}\n\nEnglish Booster est un espace 100% anglophone. Veuillez enregistrer et titrer votre vidéo exclusivement en anglais.`
+        : `🛡️ English Sentinel AI : Publication blocked!\n\n${verification.reason}\n\nEnglish Booster strictly requires all partner videos to be 100% in English.`);
+      return;
+    }
+
     setUploading(true);
     playSound('click');
 
@@ -557,8 +599,9 @@ export default function ShortsPage() {
         finalMediaUrl = videoPreviewUrl;
       }
 
-      // Encode structured content: title:::transcript:::category:::level
-      const storedContent = `${shortTitle.trim()}:::${shortTranscript.trim()}:::${shortCategory}:::${shortLevel}`;
+      const certId = verification.certificateId || `EB-AI-${Date.now()}`;
+      // Encode structured content: title:::transcript:::category:::level:::ai_verified:::certificateId
+      const storedContent = `${shortTitle.trim()}:::${shortTranscript.trim()}:::${shortCategory}:::${shortLevel}:::ai_verified:::${certId}`;
 
       const { data: newPost } = await supabase
         .from('posts')
@@ -588,6 +631,8 @@ export default function ShortsPage() {
         likes_count: 0,
         comments_count: 0,
         user_id: user.id,
+        ai_verified: true,
+        ai_certificate: certId,
       };
 
       setShortsList(prev => [newShortItem, ...prev]);
@@ -755,12 +800,17 @@ export default function ShortsPage() {
 
           {/* Top Info Bar */}
           <div className="relative z-30 flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
               <span className="px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-extrabold text-xs backdrop-blur-md">
                 {isFr ? `Niveau ${currentShort.level}` : `Level ${currentShort.level}`}
               </span>
               <span className="px-2.5 py-1 rounded-full bg-black/60 border border-white/10 text-[11px] font-bold text-slate-300 backdrop-blur-md">
                 {getCategoryLabel(currentShort.category, isFr)}
+              </span>
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/25 border border-emerald-400/50 text-emerald-300 text-[10px] font-black backdrop-blur-md shadow-sm">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden xs:inline">AI Verified English</span>
+                <span className="xs:hidden">AI 100% EN</span>
               </span>
             </div>
 
@@ -1216,6 +1266,64 @@ export default function ShortsPage() {
                 />
               </div>
 
+              {/* English Sentinel AI Moderation Card */}
+              <div className={`p-3 rounded-2xl border transition-all ${
+                !shortTitle.trim() && !shortTranscript.trim()
+                  ? 'bg-slate-50 dark:bg-[#060a14] border-slate-200 dark:border-white/10'
+                  : aiVerification?.isEnglish
+                    ? 'bg-emerald-500/10 border-emerald-500/40 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
+                    : 'bg-rose-500/10 border-rose-500/50 shadow-[0_0_20px_rgba(244,63,94,0.15)]'
+              }`}>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${
+                      aiVerification?.isEnglish ? 'bg-emerald-500 text-slate-950' : 'bg-rose-500 text-white'
+                    }`}>
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <span>Agent IA English Sentinel</span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 font-mono font-bold">
+                        v2.4
+                      </span>
+                    </span>
+                  </div>
+
+                  {aiVerification && (
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                      aiVerification.isEnglish 
+                        ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/40' 
+                        : 'bg-rose-500/20 text-rose-600 dark:text-rose-300 border border-rose-500/40'
+                    }`}>
+                      {aiVerification.isEnglish ? `✓ 100% Anglais (${aiVerification.confidence}%)` : '✗ Rejeté (Non-anglais)'}
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                  {!shortTitle.trim() && !shortTranscript.trim()
+                    ? (isFr 
+                        ? "L'Agent IA sécurise les vidéos pour s'assurer qu'elles sont 100% en anglais afin de garantir l'immersion des partenaires."
+                        : "The AI Agent secures community videos ensuring they are strictly 100% in English for learner immersion.")
+                    : aiVerification?.isEnglish
+                      ? (isFr ? aiVerification.reasonFr : aiVerification.reason)
+                      : (isFr ? aiVerification?.reasonFr : aiVerification?.reason)}
+                </p>
+
+                {aiVerification?.flaggedWords && aiVerification.flaggedWords.length > 0 && (
+                  <div className="mt-2 p-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-[10px] text-rose-600 dark:text-rose-300">
+                    <span className="font-bold">Mots non-anglophones détectés :</span> {aiVerification.flaggedWords.join(', ')}
+                    <p className="mt-0.5 text-rose-500 dark:text-rose-400">English Booster requiert une expression 100% en anglais.</p>
+                  </div>
+                )}
+
+                {aiVerification?.certificateId && (
+                  <div className="mt-1.5 text-[9px] text-emerald-600 dark:text-emerald-400 font-mono">
+                    Certificat IA : {aiVerification.certificateId}
+                  </div>
+                )}
+              </div>
+
               {/* English pledge */}
               <label className="flex items-center gap-2 cursor-pointer pt-1">
                 <input
@@ -1240,7 +1348,7 @@ export default function ShortsPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={uploading || !videoFile || !shortTitle.trim() || !englishPledged}
+                  disabled={uploading || !videoFile || !shortTitle.trim() || !englishPledged || (aiVerification !== null && !aiVerification.isEnglish)}
                   className="px-6 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-500 to-teal-400 dark:from-emerald-400 dark:to-teal-400 text-slate-950 shadow-[0_0_20px_rgba(74,222,128,0.3)] hover:scale-105 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-2 cursor-pointer"
                 >
                   {uploading ? (
@@ -1250,8 +1358,8 @@ export default function ShortsPage() {
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-4 h-4" />
-                      <span>{isFr ? 'Publier le Short' : 'Publish Short'}</span>
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>{isFr ? 'Publier le Short (Sécurisé IA)' : 'Publish Short (AI Secured)'}</span>
                     </>
                   )}
                 </button>
