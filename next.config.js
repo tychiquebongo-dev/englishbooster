@@ -7,6 +7,10 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  onDemandEntries: {
+    maxInactiveAge: 120 * 1000,
+    pagesBufferLength: 8,
+  },
   experimental: {
     optimizePackageImports: ['lucide-react', 'canvas-confetti'],
   },
@@ -15,6 +19,11 @@ const nextConfig = {
   },
   typescript: {
     ignoreBuildErrors: true,
+  },
+  webpack: (config) => {
+    config.output = config.output || {};
+    config.output.chunkLoadingGlobal = 'webpackChunk_englishbooster';
+    return config;
   },
 };
 
