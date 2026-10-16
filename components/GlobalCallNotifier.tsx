@@ -260,6 +260,15 @@ export default function GlobalCallNotifier() {
     clearCallNotifications();
   };
 
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
+
+  const isFrRef = useRef(isFr);
+  isFrRef.current = isFr;
+
+  const playSoundRef = useRef(playSound);
+  playSoundRef.current = playSound;
+
   useEffect(() => {
     if (!user?.id) return;
 
@@ -269,18 +278,18 @@ export default function GlobalCallNotifier() {
     channel
       .on('broadcast', { event: 'incoming_call' }, ({ payload }: { payload: IncomingCallPayload }) => {
         // If current user is already in a call with this roomId, ignore
-        if (pathname === '/call') return;
+        if (pathnameRef.current === '/call') return;
 
         incomingCallRef.current = payload;
         setIncomingCall(payload);
-        playSound('call');
+        playSoundRef.current('call');
         triggerVibration([500, 250, 500, 250, 1000]);
         showPhoneCallNotification(payload);
 
         // Loop ringtone sound and phone vibration every 2.8s
         if (ringIntervalRef.current) clearInterval(ringIntervalRef.current);
         ringIntervalRef.current = setInterval(() => {
-          playSound('call');
+          playSoundRef.current('call');
           triggerVibration([500, 250, 500, 250, 1000]);
         }, 2800);
 
@@ -294,14 +303,14 @@ export default function GlobalCallNotifier() {
 
           if (activeCall && user?.id) {
             const missedText = activeCall.isVideo 
-              ? (isFr ? '📹 Appel vidéo manqué' : '📹 Missed video call') 
-              : (isFr ? '📞 Appel vocal manqué' : '📞 Missed voice call');
+              ? (isFrRef.current ? '📹 Appel vidéo manqué' : '📹 Missed video call') 
+              : (isFrRef.current ? '📞 Appel vocal manqué' : '📞 Missed voice call');
             showPhoneMessageNotification({
               senderId: activeCall.callerId,
               senderName: activeCall.callerName,
               senderAvatar: activeCall.callerAvatar,
               receiverId: user.id,
-              text: `${missedText} (${isFr ? 'Appuyez pour rappeler' : 'Tap to call back'})`,
+              text: `${missedText} (${isFrRef.current ? 'Appuyez pour rappeler' : 'Tap to call back'})`,
             });
           }
         }, 32000);
@@ -314,14 +323,14 @@ export default function GlobalCallNotifier() {
 
         if (activeCall && user?.id) {
           const missedText = activeCall.isVideo 
-            ? (isFr ? '📹 Appel vidéo manqué' : '📹 Missed video call') 
-            : (isFr ? '📞 Appel vocal manqué' : '📞 Missed voice call');
+            ? (isFrRef.current ? '📹 Appel vidéo manqué' : '📹 Missed video call') 
+            : (isFrRef.current ? '📞 Appel vocal manqué' : '📞 Missed voice call');
           showPhoneMessageNotification({
             senderId: activeCall.callerId,
             senderName: activeCall.callerName,
             senderAvatar: activeCall.callerAvatar,
             receiverId: user.id,
-            text: `${missedText} (${isFr ? 'Appuyez pour rappeler' : 'Tap to call back'})`,
+            text: `${missedText} (${isFrRef.current ? 'Appuyez pour rappeler' : 'Tap to call back'})`,
           });
         }
       })
@@ -332,11 +341,11 @@ export default function GlobalCallNotifier() {
       })
       .on('broadcast', { event: 'new_message' }, ({ payload }: { payload: NewMessagePayload }) => {
         // Only show toast if user is not currently in chat with this sender
-        if (pathname?.startsWith('/chat') && window.location.search.includes(payload.senderId)) {
+        if (pathnameRef.current?.startsWith('/chat') && typeof window !== 'undefined' && window.location.search.includes(payload.senderId)) {
           return;
         }
 
-        playSound('chime');
+        playSoundRef.current('chime');
         triggerVibration([150, 80, 150]);
         setMessageToast(payload);
         showPhoneMessageNotification(payload);
@@ -349,28 +358,66 @@ export default function GlobalCallNotifier() {
       .subscribe();
 
     // Global Presence Channel so all other users on the platform immediately know this user is online
-    const presenceChannel = supabase.channel('global_online_presence', {
+    const existingPresence = supabase.getChannels().find(c => c.topic === 'realtime:global_online_presence');
+    const presenceChannel = existingPresence || supabase.channel('global_online_presence', {
       config: { presence: { key: user.id } }
     });
 
-    presenceChannel.subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
-        try {
-          await presenceChannel.track({
-            user_id: user.id,
-            name: profile?.full_name || user.email,
-            online_at: new Date().toISOString(),
-          });
-        } catch {}
-      }
-    });
+    const updatePresenceState = () => {
+      try {
+        const state = presenceChannel.presenceState();
+        const ids = new Set<string>();
+        Object.keys(state).forEach(key => {
+          ids.add(key);
+          const list = state[key] as any[];
+          if (Array.isArray(list)) {
+            list.forEach(p => {
+              if (p?.user_id) ids.add(p.user_id);
+            });
+          }
+        });
+        const idsArray = Array.from(ids);
+        if (typeof window !== 'undefined') {
+          (window as any).__EB_ONLINE_USER_IDS = idsArray;
+          window.dispatchEvent(new CustomEvent('eb_presence_sync', { detail: idsArray }));
+        }
+      } catch {}
+    };
+
+    // Attach callbacks ONLY if channel is not already joined or joining
+    if (presenceChannel.state !== 'joined' && presenceChannel.state !== 'joining') {
+      presenceChannel
+        .on('presence', { event: 'sync' }, updatePresenceState)
+        .on('presence', { event: 'join' }, updatePresenceState)
+        .on('presence', { event: 'leave' }, updatePresenceState)
+        .subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            try {
+              await presenceChannel.track({
+                user_id: user.id,
+                name: profile?.full_name || user.email,
+                online_at: new Date().toISOString(),
+              });
+            } catch {}
+          }
+        });
+    } else {
+      // Already subscribed, just track current user and update state
+      try {
+        presenceChannel.track({
+          user_id: user.id,
+          name: profile?.full_name || user.email,
+          online_at: new Date().toISOString(),
+        }).catch(() => {});
+        updatePresenceState();
+      } catch {}
+    }
 
     return () => {
       stopRinging();
       supabase.removeChannel(channel);
-      supabase.removeChannel(presenceChannel);
     };
-  }, [user?.id, profile?.full_name, pathname, playSound, supabase, isFr]);
+  }, [user?.id, profile?.full_name, supabase]);
 
   // Accept incoming call
   const handleAcceptCall = () => {

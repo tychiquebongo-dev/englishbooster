@@ -439,45 +439,44 @@ function RealConversationContent() {
 
   // Global Realtime Presence & Database status listener across all registered users
   useEffect(() => {
-    const presenceChannel = supabase.channel('global_online_presence', {
-      config: { presence: { key: user?.id || 'chat_visitor' } }
-    });
+    // 1. Immediately read cached presence if available from GlobalCallNotifier
+    if (typeof window !== 'undefined' && Array.isArray((window as any).__EB_ONLINE_USER_IDS)) {
+      setOnlineUserIds(prev => new Set([...prev, ...(window as any).__EB_ONLINE_USER_IDS]));
+    }
 
-    const updatePresenceState = () => {
-      const state = presenceChannel.presenceState();
-      const ids = new Set<string>();
-      Object.keys(state).forEach(key => {
-        ids.add(key);
-        const list = state[key] as any[];
-        if (Array.isArray(list)) {
-          list.forEach(p => {
-            if (p.user_id) ids.add(p.user_id);
-          });
-        }
-      });
-      setOnlineUserIds(prev => {
-        const merged = new Set([...prev, ...ids]);
-        return merged;
-      });
+    // 2. Listen to presence updates dispatched globally by GlobalCallNotifier
+    const handlePresenceSync = (e: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setOnlineUserIds(prev => new Set([...prev, ...e.detail]));
+      }
     };
 
-    presenceChannel
-      .on('presence', { event: 'sync' }, updatePresenceState)
-      .on('presence', { event: 'join' }, updatePresenceState)
-      .on('presence', { event: 'leave' }, updatePresenceState)
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED' && user?.id) {
-          try {
-            await presenceChannel.track({
-              user_id: user.id,
-              name: profile?.full_name || user.email,
-              online_at: new Date().toISOString(),
-            });
-          } catch {}
-        }
-      });
+    if (typeof window !== 'undefined') {
+      window.addEventListener('eb_presence_sync', handlePresenceSync);
+    }
 
-    // Realtime database listener for profile status updates
+    // 3. Fallback: If global presence channel exists, read its current state safely without adding conflicting callbacks
+    try {
+      const activePresenceChannel = supabase.getChannels().find(c => c.topic === 'realtime:global_online_presence');
+      if (activePresenceChannel && typeof activePresenceChannel.presenceState === 'function') {
+        const state = activePresenceChannel.presenceState();
+        const ids = new Set<string>();
+        Object.keys(state).forEach(key => {
+          ids.add(key);
+          const list = state[key] as any[];
+          if (Array.isArray(list)) {
+            list.forEach(p => {
+              if (p?.user_id) ids.add(p.user_id);
+            });
+          }
+        });
+        if (ids.size > 0) {
+          setOnlineUserIds(prev => new Set([...prev, ...ids]));
+        }
+      }
+    } catch {}
+
+    // 4. Realtime database listener for profile status updates
     const profilesChannel = supabase
       .channel('chat_profiles_db_sync')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, (payload: any) => {
@@ -493,10 +492,12 @@ function RealConversationContent() {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(presenceChannel);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('eb_presence_sync', handlePresenceSync);
+      }
       supabase.removeChannel(profilesChannel);
     };
-  }, [user?.id, profile?.full_name, supabase]);
+  }, [supabase]);
 
   const currentMessages = useMemo(() => {
     if (!activePartner) return [];
@@ -626,6 +627,13 @@ function RealConversationContent() {
 
     // Supabase Realtime channel for live messages between real users
     const channelName = `real_chat_${user.id < activePartner.id ? `${user.id}_${activePartner.id}` : `${activePartner.id}_${user.id}`}`;
+    try {
+      const existingChat = supabase.getChannels().find(c => c.topic === `realtime:${channelName}`);
+      if (existingChat) {
+        supabase.removeChannel(existingChat);
+      }
+    } catch {}
+
     const channel = supabase.channel(channelName, {
       config: { presence: { key: user.id } }
     });
