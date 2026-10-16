@@ -44,7 +44,11 @@ import {
   Copy,
   MoreVertical,
   AlertTriangle,
-  Home
+  Home,
+  Reply,
+  WifiOff,
+  X,
+  CornerDownRight
 } from 'lucide-react';
 import Link from 'next/link';
 import InvitePartnerModal from '@/components/InvitePartnerModal';
@@ -64,6 +68,12 @@ interface RealPartner {
   bio: string;
 }
 
+interface ChatReplyTo {
+  id: string;
+  sender_name: string;
+  text: string;
+}
+
 interface ChatMessage {
   id: string;
   sender_id: string;
@@ -73,6 +83,7 @@ interface ChatMessage {
   audio_url?: string | null;
   created_at: string;
   status?: 'sent' | 'delivered' | 'read';
+  reply_to?: ChatReplyTo | null;
 }
 
 const ENGLISH_KEYBOARD_SHORTCUTS = [
@@ -161,6 +172,27 @@ function detectGrammarIssue(text: string) {
   return null;
 }
 
+// Helper: Parse stored message text to extract quoted reply if present
+function parseMessageText(rawText: string): { text: string; replyTo: ChatReplyTo | null } {
+  if (!rawText) return { text: '', replyTo: null };
+  const match = rawText.match(/^>>reply:([^|]+)\|([^|]+)\|(.*?)<<\n([\s\S]*)$/);
+  if (match) {
+    try {
+      return {
+        replyTo: {
+          id: match[1],
+          sender_name: decodeURIComponent(match[2]),
+          text: decodeURIComponent(match[3]),
+        },
+        text: match[4],
+      };
+    } catch {
+      return { text: rawText, replyTo: null };
+    }
+  }
+  return { text: rawText, replyTo: null };
+}
+
 function RealConversationContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -169,6 +201,7 @@ function RealConversationContent() {
 
   const { user, profile, playSound } = useAuth();
   const supabase = createClient();
+  const isFr = typeof navigator !== 'undefined' ? (navigator.language?.startsWith('fr') ?? true) : true;
 
   // ONLY 100% real registered partners from database
   const [partners, setPartners] = useState<RealPartner[]>([]);
@@ -181,6 +214,17 @@ function RealConversationContent() {
   
   // Mobile responsive toggle
   const [mobileShowChat, setMobileShowChat] = useState(false);
+
+  // Message Reply, Highlight & Selection state (WhatsApp Style)
+  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
+  const [selectedMsgId, setSelectedMsgId] = useState<string | null>(null);
+
+  // Offline Call Signal Outline Warning Modal
+  const [showOfflineCallModal, setShowOfflineCallModal] = useState<{
+    isOpen: boolean;
+    videoMode: boolean;
+  } | null>(null);
 
   // Audio voice note recording
   const [isRecording, setIsRecording] = useState(false);
@@ -252,6 +296,49 @@ function RealConversationContent() {
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Smooth scroll to an identified message with glow pulse
+  const scrollToMessage = (msgId: string) => {
+    const el = document.getElementById(`msg-${msgId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHighlightedMsgId(msgId);
+      setTimeout(() => {
+        setHighlightedMsgId(prev => (prev === msgId ? null : prev));
+      }, 2500);
+    }
+  };
+
+  // Start reply to a message and scroll to it
+  const handleStartReply = (msg: ChatMessage) => {
+    playSound?.('click');
+    setReplyingTo(msg);
+    scrollToMessage(msg.id);
+    inputRef.current?.focus();
+  };
+
+  // Share message via Web Share API or Clipboard
+  const handleShareMessage = async (msg: ChatMessage) => {
+    playSound?.('click');
+    const shareText = `"${msg.text}" — ${msg.sender_name} on English Booster`;
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: 'English Booster Chat',
+          text: shareText,
+          url: typeof window !== 'undefined' ? window.location.href : undefined,
+        });
+        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      await navigator.clipboard.writeText(shareText);
+      setCopiedMsgId(msg.id);
+      setTimeout(() => setCopiedMsgId(null), 2000);
+    }
+  };
 
   // 1. Load ONLY REAL registered profiles from Supabase database
   useEffect(() => {
@@ -382,15 +469,18 @@ function RealConversationContent() {
           if (dbMessages && isSubscribed) {
             const mapped: ChatMessage[] = dbMessages.map(m => {
               const isMe = m.sender_id === user.id;
+              const parsed = parseMessageText(m.text);
               return {
                 id: m.id,
                 sender_id: m.sender_id,
                 sender_name: isMe ? (profile?.full_name || 'You') : activePartner.name,
                 sender_avatar: isMe ? getUserAvatar(profile?.avatar_url, profile?.full_name, user.email) : activePartner.avatar,
-                text: m.text,
+                text: parsed.text,
+                reply_to: parsed.replyTo,
                 audio_url: m.audio_url,
                 created_at: m.created_at,
-                status: 'read',
+                // Si le partenaire n'est pas connecté: 1 trait ('sent'). Si connecté et lu: 2 traits bleus ('read'). Si connecté non-lu: 2 traits gris ('delivered')
+                status: isMe ? (activePartner.is_online ? (m.is_read ? 'read' : 'delivered') : 'sent') : 'read',
               };
             });
 
@@ -420,10 +510,17 @@ function RealConversationContent() {
     channel
       .on('broadcast', { event: 'chat_message' }, ({ payload }: any) => {
         if (!payload || payload.sender_id === user.id) return;
+        const parsed = parseMessageText(payload.text);
+        const incoming: ChatMessage = {
+          ...payload,
+          text: parsed.text,
+          reply_to: payload.reply_to || parsed.replyTo,
+          status: 'read',
+        };
         setConversationMap(prev => {
           const current = prev[activePartner.id] || [];
-          if (current.some(m => m.id === payload.id)) return prev;
-          const nextList = [...current, payload];
+          if (current.some(m => m.id === incoming.id)) return prev;
+          const nextList = [...current, incoming];
           const nextMap = { ...prev, [activePartner.id]: nextList };
           saveConversation(nextMap);
           return nextMap;
@@ -440,12 +537,14 @@ function RealConversationContent() {
         async (payload) => {
           const newMsg = payload.new as any;
           if (newMsg && newMsg.sender_id === activePartner.id) {
+            const parsed = parseMessageText(newMsg.text);
             const incoming: ChatMessage = {
               id: newMsg.id,
               sender_id: newMsg.sender_id,
               sender_name: activePartner.name,
               sender_avatar: activePartner.avatar,
-              text: newMsg.text,
+              text: parsed.text,
+              reply_to: parsed.replyTo,
               audio_url: newMsg.audio_url,
               created_at: newMsg.created_at,
               status: 'read',
@@ -564,11 +663,20 @@ function RealConversationContent() {
   };
 
   // Start Outgoing Remote Call by routing directly to the dedicated Call Room
-  const handleStartRemoteCall = (videoMode: boolean) => {
+  const handleStartRemoteCall = (videoMode: boolean, bypassOfflineWarning = false) => {
     if (!activePartner || !user?.id) {
       if (!user?.id) alert("Please sign in to make calls.");
       return;
     }
+
+    // If partner is not online, show signal outline modal warning
+    if (!activePartner.is_online && !bypassOfflineWarning) {
+      playSound?.('click');
+      setShowOfflineCallModal({ isOpen: true, videoMode });
+      return;
+    }
+
+    setShowOfflineCallModal(null);
     playSound?.('call');
     const roomId = `room_${[user.id, activePartner.id].sort().join('_')}_${Date.now()}`;
     router.push(`/call?partnerId=${activePartner.id}&partnerName=${encodeURIComponent(activePartner.name)}&video=${videoMode}&roomId=${roomId}`);
@@ -712,6 +820,17 @@ function RealConversationContent() {
 
     const grammarCheck = detectGrammarIssue(textToSend);
 
+    const currentReply = replyingTo ? {
+      id: replyingTo.id,
+      sender_name: replyingTo.sender_name,
+      text: (replyingTo.text || (replyingTo.audio_url ? '🎵 Voice note' : '')).slice(0, 140),
+    } : null;
+
+    // Database text format encodes reply metadata if replying to an identified message
+    const dbText = currentReply 
+      ? `>>reply:${currentReply.id}|${encodeURIComponent(currentReply.sender_name)}|${encodeURIComponent(currentReply.text)}<<\n${textToSend}`
+      : textToSend;
+
     const userMsgId = `msg_${Date.now()}`;
     const userMessage: ChatMessage = {
       id: userMsgId,
@@ -719,8 +838,10 @@ function RealConversationContent() {
       sender_name: profile?.full_name || 'You',
       sender_avatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
       text: textToSend,
+      reply_to: currentReply,
       created_at: new Date().toISOString(),
-      status: 'sent',
+      // 1 trait si destinataire hors ligne, 2 traits gris si connecté
+      status: activePartner.is_online ? 'delivered' : 'sent',
     };
 
     const targetPartnerId = activePartner.id;
@@ -729,6 +850,7 @@ function RealConversationContent() {
 
     saveConversation(newMap);
     setInputText('');
+    setReplyingTo(null);
     setGrammarSuggestion(null);
     setShowEmojiPicker(false);
 
@@ -736,7 +858,10 @@ function RealConversationContent() {
       chatChannelRef.current.send({
         type: 'broadcast',
         event: 'chat_message',
-        payload: userMessage,
+        payload: {
+          ...userMessage,
+          text: dbText,
+        },
       });
     }
 
@@ -765,29 +890,31 @@ function RealConversationContent() {
         await supabase.from('messages').insert({
           conversation_id: conversationId,
           sender_id: user.id,
-          text: textToSend,
+          text: dbText,
           grammar_corrected: grammarCheck ? grammarCheck.corrected : null,
           grammar_explanation: grammarCheck ? grammarCheck.explanation : null,
         });
 
-        // Update status to delivered
-        setConversationMap(prev => {
-          const msgs = prev[targetPartnerId] || [];
-          const next = msgs.map(m => m.id === userMsgId ? { ...m, status: 'delivered' as const } : m);
-          const nextMap = { ...prev, [targetPartnerId]: next };
-          saveConversation(nextMap);
-          return nextMap;
-        });
+        // Update status to delivered only if partner is online
+        if (activePartner.is_online) {
+          setConversationMap(prev => {
+            const msgs = prev[targetPartnerId] || [];
+            const next = msgs.map(m => m.id === userMsgId ? { ...m, status: 'delivered' as const } : m);
+            const nextMap = { ...prev, [targetPartnerId]: next };
+            saveConversation(nextMap);
+            return nextMap;
+          });
 
-        // Immediately notify online partner via Supabase Realtime broadcast
-        broadcastNewMessage({
-          senderId: user.id,
-          senderName: profile?.full_name || 'English Learner',
-          senderAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
-          receiverId: targetPartnerId,
-          text: textToSend,
-          conversationId: conversationId || undefined,
-        });
+          // Immediately notify online partner via Supabase Realtime broadcast
+          broadcastNewMessage({
+            senderId: user.id,
+            senderName: profile?.full_name || 'English Learner',
+            senderAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
+            receiverId: targetPartnerId,
+            text: textToSend,
+            conversationId: conversationId || undefined,
+          });
+        }
       }
     } catch (err) {
       console.warn('Real message stored locally:', err);
@@ -896,7 +1023,7 @@ function RealConversationContent() {
             text: `🎙️ Voice Note (${recordedDuration}s)`,
             audio_url: base64Audio,
             created_at: new Date().toISOString(),
-            status: 'sent',
+            status: activePartner.is_online ? 'delivered' : 'sent',
           };
 
           // Optimistic local update
@@ -1703,8 +1830,10 @@ function RealConversationContent() {
                       alt={activePartner.name}
                       className="w-10 h-10 rounded-full object-cover ring-1 ring-white/15"
                     />
-                    {activePartner.is_online && (
+                    {activePartner.is_online ? (
                       <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-[#00a884] border-2 border-[#202c33]" />
+                    ) : (
+                      <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-slate-500 border-2 border-[#202c33]" title="Hors ligne" />
                     )}
                   </div>
 
@@ -1716,37 +1845,74 @@ function RealConversationContent() {
                         {activePartner.level}
                       </span>
                     </h2>
-                    <p className="text-[11px] text-slate-400 truncate">
-                      {activePartner.country} • {activePartner.is_online ? 'online' : 'registered member'}
+                    <p className="text-[11px] text-slate-400 truncate flex items-center gap-1.5">
+                      <span>{activePartner.country} •</span>
+                      {activePartner.is_online ? (
+                        <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          en ligne
+                        </span>
+                      ) : (
+                        <span className="text-amber-400 font-medium inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-[10px]">
+                          <WifiOff className="w-2.5 h-2.5 text-amber-400" />
+                          signal outline : hors ligne
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
 
                 {/* Distinct WebRTC Calling Buttons & Delete Options */}
                 <div className="flex items-center gap-1.5 sm:gap-2 text-slate-300">
-                  {/* Distinct Emerald Audio Call Button */}
+                  {/* Distinct Emerald Audio Call Button (with Outline style if partner offline) */}
                   <button
                     type="button"
                     onClick={() => handleStartRemoteCall(false)}
-                    className="flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 hover:text-emerald-200 transition-all shadow-sm hover:scale-105 active:scale-95 group cursor-pointer"
-                    title="Launch Encrypted Voice Call"
+                    className={`flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 rounded-full transition-all shadow-sm hover:scale-105 active:scale-95 group cursor-pointer ${
+                      !activePartner.is_online
+                        ? 'bg-amber-500/10 hover:bg-amber-500/20 border-2 border-dashed border-amber-400/80 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
+                        : 'bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 hover:text-emerald-200'
+                    }`}
+                    title={!activePartner.is_online ? "Signal Outline : Partenaire hors ligne (cliquer pour appeler quand même)" : "Launch Encrypted Voice Call"}
                   >
                     <div className="relative">
-                      <Phone className="w-4 h-4 fill-emerald-500/30 text-emerald-400 group-hover:scale-110 transition-transform" />
-                      <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                      <Phone className={`w-4 h-4 group-hover:scale-110 transition-transform ${
+                        !activePartner.is_online ? 'text-amber-400' : 'fill-emerald-500/30 text-emerald-400'
+                      }`} />
+                      {activePartner.is_online ? (
+                        <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                      ) : (
+                        <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-400" />
+                      )}
                     </div>
                     <span className="hidden sm:inline text-xs font-bold">Audio Call</span>
+                    {!activePartner.is_online && (
+                      <span className="hidden md:inline text-[9px] px-1 rounded border border-amber-400/50 text-amber-300 uppercase font-black tracking-tight">
+                        Outline
+                      </span>
+                    )}
                   </button>
 
-                  {/* Distinct Cyan Video Call Button */}
+                  {/* Distinct Cyan Video Call Button (with Outline style if partner offline) */}
                   <button
                     type="button"
                     onClick={() => handleStartRemoteCall(true)}
-                    className="flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 rounded-full bg-gradient-to-r from-cyan-500/20 to-blue-600/20 hover:from-cyan-500/30 hover:to-blue-600/30 border border-cyan-400/40 text-cyan-300 hover:text-white transition-all shadow-[0_0_15px_rgba(6,182,212,0.25)] hover:scale-105 active:scale-95 group cursor-pointer"
-                    title="Launch HD Video Call & Camera Viewfinder"
+                    className={`flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 rounded-full transition-all hover:scale-105 active:scale-95 group cursor-pointer ${
+                      !activePartner.is_online
+                        ? 'bg-amber-500/10 hover:bg-amber-500/20 border-2 border-dashed border-amber-400/80 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
+                        : 'bg-gradient-to-r from-cyan-500/20 to-blue-600/20 hover:from-cyan-500/30 hover:to-blue-600/30 border border-cyan-400/40 text-cyan-300 hover:text-white shadow-[0_0_15px_rgba(6,182,212,0.25)]'
+                    }`}
+                    title={!activePartner.is_online ? "Signal Outline : Partenaire hors ligne (cliquer pour appeler quand même)" : "Launch HD Video Call & Camera Viewfinder"}
                   >
-                    <Video className="w-4 h-4 text-cyan-400 fill-cyan-400/20 group-hover:text-cyan-300 group-hover:scale-110 transition-transform" />
+                    <Video className={`w-4 h-4 group-hover:scale-110 transition-transform ${
+                      !activePartner.is_online ? 'text-amber-400' : 'text-cyan-400 fill-cyan-400/20 group-hover:text-cyan-300'
+                    }`} />
                     <span className="hidden sm:inline text-xs font-black tracking-wide">Video Call</span>
+                    {!activePartner.is_online && (
+                      <span className="hidden md:inline text-[9px] px-1 rounded border border-amber-400/50 text-amber-300 uppercase font-black tracking-tight">
+                        Outline
+                      </span>
+                    )}
                   </button>
 
                   {/* Clear / Delete Conversation Button */}
@@ -1790,39 +1956,106 @@ function RealConversationContent() {
                 ) : (
                   currentMessages.map((msg) => {
                     const isMe = msg.sender_id === (user?.id || 'me');
+                    const isSelected = selectedMsgId === msg.id;
+                    const isHighlighted = highlightedMsgId === msg.id;
 
                     return (
                       <div
                         key={msg.id}
-                        className={`flex items-end gap-1.5 group relative ${isMe ? 'justify-end' : 'justify-start'}`}
+                        id={`msg-${msg.id}`}
+                        className={`flex items-end gap-1.5 group relative transition-all duration-300 rounded-2xl ${
+                          isHighlighted ? 'ring-2 ring-emerald-400 bg-emerald-500/15 p-1 scale-[1.01]' : ''
+                        } ${isMe ? 'justify-end' : 'justify-start'}`}
                       >
                         <div
-                          className={`relative max-w-[85%] sm:max-w-md px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed shadow-md group/bubble ${
+                          onClick={() => setSelectedMsgId(prev => prev === msg.id ? null : msg.id)}
+                          className={`relative max-w-[85%] sm:max-w-md px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed shadow-md group/bubble cursor-pointer select-text transition-all ${
                             isMe
                               ? 'bg-[#005c4b] text-white rounded-tr-none'
                               : 'bg-[#202c33] text-white rounded-tl-none border border-white/5'
                           }`}
                         >
-                          {/* Floating quick actions on bubble hover */}
-                          <div className={`absolute -top-3.5 ${isMe ? 'right-2' : 'left-2'} hidden group-hover/bubble:flex items-center gap-1 bg-[#111b21] border border-white/15 px-2 py-0.5 rounded-full shadow-lg z-20`}>
+                          {/* Floating quick actions on bubble hover or tap */}
+                          <div className={`absolute -top-3.5 ${isMe ? 'right-2' : 'left-2'} ${
+                            isSelected ? 'flex' : 'hidden group-hover/bubble:flex'
+                          } items-center gap-1 bg-[#111b21] border border-white/20 px-2 py-0.5 rounded-full shadow-xl z-20 animate-fade-in`}>
+                            {/* Reply button */}
                             <button
                               type="button"
-                              onClick={() => handleCopyMessage(msg.text, msg.id)}
-                              className="p-1 hover:text-cyan-300 text-slate-400 transition-colors"
-                              title="Copy text / Copier"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStartReply(msg);
+                              }}
+                              className="p-1 hover:text-emerald-400 text-slate-300 transition-colors flex items-center gap-1"
+                              title="Répondre (Scroll & Citer) / Reply"
                             >
-                              {copiedMsgId === msg.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                              <Reply className="w-3.5 h-3.5" />
                             </button>
 
+                            {/* Share button */}
                             <button
                               type="button"
-                              onClick={() => handleDeleteMessage(msg.id)}
-                              className="p-1 hover:text-rose-400 text-slate-400 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleShareMessage(msg);
+                              }}
+                              className="p-1 hover:text-cyan-300 text-slate-300 transition-colors"
+                              title="Partager ce message / Share"
+                            >
+                              <Share2 className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Copy button */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCopyMessage(msg.text, msg.id);
+                              }}
+                              className="p-1 hover:text-cyan-300 text-slate-300 transition-colors"
+                              title="Copier le texte / Copy"
+                            >
+                              {copiedMsgId === msg.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+
+                            {/* Delete button */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteMessage(msg.id);
+                              }}
+                              className="p-1 hover:text-rose-400 text-slate-300 transition-colors"
                               title="Delete message / Supprimer"
                             >
-                              <Trash2 className="w-3 h-3" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
+
+                          {/* Quoted Reply Card inside Bubble */}
+                          {msg.reply_to && (
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                scrollToMessage(msg.reply_to!.id);
+                              }}
+                              className="mb-2 p-2 rounded-xl bg-black/30 border-l-4 border-emerald-400 hover:bg-black/50 transition-colors cursor-pointer text-left select-none group/quote"
+                              title="Cliquer pour faire défiler jusqu'au message cité"
+                            >
+                              <div className="flex items-center justify-between text-[11px] font-bold text-emerald-300">
+                                <span className="flex items-center gap-1">
+                                  <CornerDownRight className="w-3 h-3 text-emerald-400" />
+                                  {msg.reply_to.sender_name}
+                                </span>
+                                <span className="text-[9px] text-emerald-400/80 group-hover/quote:underline">
+                                  Voir le message ↗
+                                </span>
+                              </div>
+                              <p className="text-xs text-white/85 line-clamp-2 mt-0.5 font-normal">
+                                {msg.reply_to.text}
+                              </p>
+                            </div>
+                          )}
 
                           <p className="whitespace-pre-line text-sm break-words pr-4">{msg.text}</p>
 
@@ -1831,7 +2064,10 @@ function RealConversationContent() {
                             <div className="mt-2.5 p-2.5 rounded-2xl bg-black/25 border border-white/10 flex items-center gap-3 shadow-inner">
                               <button
                                 type="button"
-                                onClick={() => togglePlayAudio(msg.id, msg.audio_url!)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  togglePlayAudio(msg.id, msg.audio_url!);
+                                }}
                                 className="w-10 h-10 rounded-full bg-[#00a884] hover:bg-[#02906f] text-slate-950 flex items-center justify-center shrink-0 shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer"
                                 title={playingAudioId === msg.id ? "Pause" : "Play"}
                               >
@@ -1868,7 +2104,10 @@ function RealConversationContent() {
 
                               <button
                                 type="button"
-                                onClick={toggleSpeedRate}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleSpeedRate();
+                                }}
                                 className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] font-black text-emerald-300 hover:text-white transition-colors shrink-0 cursor-pointer"
                                 title="Playback Speed"
                               >
@@ -1880,7 +2119,10 @@ function RealConversationContent() {
                           <div className="mt-1 flex items-center justify-end gap-1.5 text-[10px] text-white/70 select-none">
                             <button
                               type="button"
-                              onClick={() => speakEnglishText(msg.text, msg.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                speakEnglishText(msg.text, msg.id);
+                              }}
                               className={`p-0.5 rounded hover:text-white transition-colors flex items-center gap-0.5 mr-auto ${
                                 speakingMsgId === msg.id ? 'text-amber-300 animate-pulse' : 'text-white/60'
                               }`}
@@ -1890,10 +2132,39 @@ function RealConversationContent() {
                               <span className="text-[9px]">Listen</span>
                             </button>
 
+                            {/* Reply Quick Action */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStartReply(msg);
+                              }}
+                              className="opacity-0 group-hover/bubble:opacity-100 p-0.5 rounded text-white/50 hover:text-emerald-400 transition-all cursor-pointer"
+                              title="Répondre / Reply"
+                            >
+                              <Reply className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Share Quick Action */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleShareMessage(msg);
+                              }}
+                              className="opacity-0 group-hover/bubble:opacity-100 p-0.5 rounded text-white/50 hover:text-cyan-400 transition-all cursor-pointer"
+                              title="Partager ce message / Share"
+                            >
+                              <Share2 className="w-3.5 h-3.5" />
+                            </button>
+
                             {/* Direct Delete Shortcut Button */}
                             <button
                               type="button"
-                              onClick={() => handleDeleteMessage(msg.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteMessage(msg.id);
+                              }}
                               className="opacity-0 group-hover/bubble:opacity-100 p-0.5 rounded text-white/40 hover:text-rose-400 transition-all cursor-pointer"
                               title="Delete message / Supprimer"
                             >
@@ -1904,7 +2175,24 @@ function RealConversationContent() {
                               {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
 
-                            {isMe && <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />}
+                            {/* WhatsApp Checkmarks: 1 trait si non connecté ('sent'), 2 traits bleus si lu ('read'), 2 traits gris si reçu ('delivered') */}
+                            {isMe && (
+                              <span className="flex items-center ml-0.5">
+                                {(!activePartner.is_online || msg.status === 'sent') ? (
+                                  <span title="Envoyé (Partenaire non connecté : 1 trait)">
+                                    <Check className="w-3.5 h-3.5 text-slate-300" />
+                                  </span>
+                                ) : msg.status === 'read' ? (
+                                  <span title="Lu (Partenaire connecté : 2 traits bleus)">
+                                    <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />
+                                  </span>
+                                ) : (
+                                  <span title="Distribué (Partenaire connecté : 2 traits gris)">
+                                    <CheckCheck className="w-3.5 h-3.5 text-slate-400" />
+                                  </span>
+                                )}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1931,6 +2219,35 @@ function RealConversationContent() {
               {/* Compose Bar */}
               <div className="p-2 sm:p-3 bg-[#202c33] border-t border-white/10 shrink-0 safe-pb">
                 
+                {/* Replying To Quote Banner (WhatsApp Style) */}
+                {replyingTo && (
+                  <div className="mb-2 p-2.5 rounded-xl bg-[#111b21] border-l-4 border-emerald-500 border-y border-r border-white/10 flex items-center justify-between gap-3 animate-fade-in shadow-md">
+                    <button
+                      type="button"
+                      onClick={() => scrollToMessage(replyingTo.id)}
+                      className="flex-1 text-left min-w-0 cursor-pointer"
+                      title="Cliquer pour faire défiler jusqu'au message / Scroll to message"
+                    >
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+                        <Reply className="w-3.5 h-3.5" />
+                        <span>Répondre à {replyingTo.sender_name}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 truncate mt-0.5">
+                        {replyingTo.text || (replyingTo.audio_url ? '🎵 Message vocal / Voice note' : '')}
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setReplyingTo(null)}
+                      className="p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-colors shrink-0 cursor-pointer"
+                      title="Annuler la réponse"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
                 {/* AI Grammar Correction Tooltip */}
                 {grammarSuggestion && (
                   <div className="mb-2 p-2.5 rounded-xl bg-[#111b21] border border-amber-500/30 flex items-center justify-between gap-3 animate-fade-in">
@@ -2162,6 +2479,62 @@ function RealConversationContent() {
                 className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs transition-colors shadow-lg cursor-pointer"
               >
                 Delete All / Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Signal Outline Warning Modal for Offline Partner Call */}
+      {showOfflineCallModal?.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-md rounded-3xl bg-[#111b21] border-2 border-amber-500/80 p-6 shadow-[0_0_50px_rgba(245,158,11,0.25)] text-center">
+            {/* Outline Signal Icon */}
+            <div className="w-16 h-16 rounded-full border-2 border-amber-400 bg-amber-500/10 flex items-center justify-center mx-auto mb-4 text-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.3)] animate-pulse">
+              <WifiOff className="w-8 h-8" />
+            </div>
+
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-500/50 bg-amber-500/10 text-amber-300 text-xs font-bold uppercase tracking-wider mb-2">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+              Signal Outline : Partenaire Hors Ligne
+            </div>
+
+            <h3 className="text-lg font-bold text-white mb-2">
+              {activePartner?.name} n&apos;est pas connecté(e)
+            </h3>
+
+            <p className="text-xs sm:text-sm text-slate-300 mb-6 leading-relaxed">
+              Le signal outline indique que <strong className="text-amber-300">{activePartner?.name}</strong> est actuellement déconnecté(e). Il/elle ne pourra peut-être pas décrocher l&apos;appel en direct.
+            </p>
+
+            <div className="space-y-2.5">
+              <button
+                type="button"
+                onClick={() => handleStartRemoteCall(showOfflineCallModal.videoMode, true)}
+                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-all active:scale-98 cursor-pointer"
+              >
+                <Phone className="w-4 h-4 fill-slate-950" />
+                <span>Lancer l&apos;appel quand même / Call Anyway</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOfflineCallModal(null);
+                  inputRef.current?.focus();
+                }}
+                className="w-full py-2.5 px-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              >
+                <MessageCircle className="w-4 h-4 text-emerald-400" />
+                <span>Laisser un message / Send Message</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowOfflineCallModal(null)}
+                className="w-full py-2 text-xs text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                Annuler
               </button>
             </div>
           </div>
