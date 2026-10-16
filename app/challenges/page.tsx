@@ -714,14 +714,21 @@ export default function ChallengesPage() {
                                 alt={partner.full_name}
                                 className="w-10 h-10 rounded-xl object-cover ring-2 ring-white/10 group-hover:ring-emerald-500/40"
                               />
-                              <span className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#060a14] ${
-                                partner.is_online ? 'bg-emerald-500' : 'bg-slate-500'
-                              }`} />
+                              {partner.is_online ? (
+                                <span className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#060a14] bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]" title="on line" />
+                              ) : (
+                                <span className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-dashed border-amber-400 bg-amber-500/40" title="outline" />
+                              )}
                             </div>
                             <div className="min-w-0">
-                              <p className="font-bold text-xs text-white truncate flex items-center gap-1">
+                              <p className="font-bold text-xs text-white truncate flex items-center gap-1.5">
                                 <span>{partner.full_name}</span>
                                 <span>{partner.flag || '🇨🇮'}</span>
+                                {partner.is_online ? (
+                                  <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 uppercase tracking-tight">on line</span>
+                                ) : (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded border border-dashed border-amber-400/80 text-amber-300 uppercase tracking-tight">outline</span>
+                                )}
                               </p>
                               <p className="text-[11px] text-slate-400">
                                 {partner.country || 'Côte d\'Ivoire'} • Niveau {partner.current_level || 'B2'}

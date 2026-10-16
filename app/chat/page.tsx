@@ -1881,22 +1881,44 @@ function RealConversationContent() {
                       <img
                         src={partner.avatar}
                         alt={partner.name}
-                        className="w-12 h-12 rounded-full object-cover ring-1 ring-white/10"
+                        className={`w-12 h-12 rounded-full object-cover transition-all ${
+                          partner.is_online ? 'ring-2 ring-emerald-500/60' : 'ring-1 ring-amber-400/50 ring-dashed'
+                        }`}
                       />
-                      {partner.is_online && (
-                        <span className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-[#00a884] border-2 border-[#111b21]" />
+                      {partner.is_online ? (
+                        <span 
+                          className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-[#00a884] border-2 border-[#111b21] shadow-[0_0_8px_rgba(0,168,132,0.8)]" 
+                          title="on line" 
+                        />
+                      ) : (
+                        <span 
+                          className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-dashed border-amber-400 bg-amber-500/40" 
+                          title="outline" 
+                        />
                       )}
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-0.5">
+                      <div className="flex items-center justify-between mb-0.5 gap-1">
                         <span className="font-bold text-sm text-white truncate flex items-center gap-1.5">
                           <span>{partner.name}</span>
                           <span>{partner.flag}</span>
                         </span>
-                        <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300">
-                          {partner.level}
-                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {partner.is_online ? (
+                            <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 inline-flex items-center gap-1 uppercase tracking-wider">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              on line
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded border border-dashed border-amber-400/70 bg-amber-500/10 text-amber-300 inline-flex items-center gap-1 uppercase tracking-wider">
+                              outline
+                            </span>
+                          )}
+                          <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-[#202c33] text-slate-300 border border-white/5">
+                            {partner.level}
+                          </span>
+                        </div>
                       </div>
 
                       <p className="text-xs text-slate-400 truncate">
@@ -1934,12 +1956,14 @@ function RealConversationContent() {
                     <img
                       src={activePartner.avatar}
                       alt={activePartner.name}
-                      className="w-10 h-10 rounded-full object-cover ring-1 ring-white/15"
+                      className={`w-10 h-10 rounded-full object-cover transition-all ${
+                        activePartner.is_online ? 'ring-2 ring-emerald-500/70' : 'ring-1 ring-amber-400/50 ring-dashed'
+                      }`}
                     />
                     {activePartner.is_online ? (
-                      <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-[#00a884] border-2 border-[#202c33]" />
+                      <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-[#00a884] border-2 border-[#202c33] shadow-[0_0_8px_rgba(0,168,132,0.8)]" title="on line" />
                     ) : (
-                      <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-slate-500 border-2 border-[#202c33]" title="Hors ligne" />
+                      <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-dashed border-amber-400 bg-amber-500/40" title="outline" />
                     )}
                   </div>
 
@@ -1954,14 +1978,14 @@ function RealConversationContent() {
                     <p className="text-[11px] text-slate-400 truncate flex items-center gap-1.5">
                       <span>{activePartner.country} •</span>
                       {activePartner.is_online ? (
-                        <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                        <span className="text-emerald-400 font-bold inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/30 text-[10px] uppercase tracking-wider">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                          en ligne
+                          on line
                         </span>
                       ) : (
-                        <span className="text-amber-400 font-medium inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-[10px]">
+                        <span className="text-amber-300 font-bold inline-flex items-center gap-1 px-1.5 py-0.2 rounded border border-dashed border-amber-400/80 bg-amber-500/10 text-[10px] uppercase tracking-wider">
                           <WifiOff className="w-2.5 h-2.5 text-amber-400" />
-                          signal outline : hors ligne
+                          outline
                         </span>
                       )}
                     </p>
@@ -1979,7 +2003,7 @@ function RealConversationContent() {
                         ? 'bg-amber-500/10 hover:bg-amber-500/20 border-2 border-dashed border-amber-400/80 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
                         : 'bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 hover:text-emerald-200'
                     }`}
-                    title={!activePartner.is_online ? "Signal Outline : Partenaire hors ligne (cliquer pour appeler quand même)" : "Launch Encrypted Voice Call"}
+                    title={!activePartner.is_online ? "Outline : Partenaire hors ligne (cliquer pour appeler quand même)" : "On line : Launch Encrypted Voice Call"}
                   >
                     <div className="relative">
                       <Phone className={`w-4 h-4 group-hover:scale-110 transition-transform ${
@@ -1992,8 +2016,12 @@ function RealConversationContent() {
                       )}
                     </div>
                     <span className="hidden sm:inline text-xs font-bold">Audio Call</span>
-                    {!activePartner.is_online && (
-                      <span className="hidden md:inline text-[9px] px-1 rounded border border-amber-400/50 text-amber-300 uppercase font-black tracking-tight">
+                    {activePartner.is_online ? (
+                      <span className="hidden md:inline text-[9px] px-1 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 uppercase font-black tracking-tight">
+                        On line
+                      </span>
+                    ) : (
+                      <span className="hidden md:inline text-[9px] px-1 rounded border border-dashed border-amber-400/80 text-amber-300 uppercase font-black tracking-tight">
                         Outline
                       </span>
                     )}
@@ -2008,14 +2036,18 @@ function RealConversationContent() {
                         ? 'bg-amber-500/10 hover:bg-amber-500/20 border-2 border-dashed border-amber-400/80 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
                         : 'bg-gradient-to-r from-cyan-500/20 to-blue-600/20 hover:from-cyan-500/30 hover:to-blue-600/30 border border-cyan-400/40 text-cyan-300 hover:text-white shadow-[0_0_15px_rgba(6,182,212,0.25)]'
                     }`}
-                    title={!activePartner.is_online ? "Signal Outline : Partenaire hors ligne (cliquer pour appeler quand même)" : "Launch HD Video Call & Camera Viewfinder"}
+                    title={!activePartner.is_online ? "Outline : Partenaire hors ligne (cliquer pour appeler quand même)" : "On line : Launch HD Video Call & Camera Viewfinder"}
                   >
                     <Video className={`w-4 h-4 group-hover:scale-110 transition-transform ${
                       !activePartner.is_online ? 'text-amber-400' : 'text-cyan-400 fill-cyan-400/20 group-hover:text-cyan-300'
                     }`} />
                     <span className="hidden sm:inline text-xs font-black tracking-wide">Video Call</span>
-                    {!activePartner.is_online && (
-                      <span className="hidden md:inline text-[9px] px-1 rounded border border-amber-400/50 text-amber-300 uppercase font-black tracking-tight">
+                    {activePartner.is_online ? (
+                      <span className="hidden md:inline text-[9px] px-1 rounded bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 uppercase font-black tracking-tight">
+                        On line
+                      </span>
+                    ) : (
+                      <span className="hidden md:inline text-[9px] px-1 rounded border border-dashed border-amber-400/80 text-amber-300 uppercase font-black tracking-tight">
                         Outline
                       </span>
                     )}

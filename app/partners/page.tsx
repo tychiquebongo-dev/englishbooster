@@ -544,18 +544,42 @@ export default function PartnersPage() {
                           <img
                             src={partner.avatar}
                             alt={partner.name}
-                            className="w-16 h-16 rounded-2xl object-cover ring-2 ring-emerald-500/30 group-hover:ring-emerald-500 transition-all shadow-md"
+                            className={`w-16 h-16 rounded-2xl object-cover transition-all shadow-md ${
+                              partner.is_online 
+                                ? 'ring-2 ring-emerald-500/80 group-hover:ring-emerald-400' 
+                                : 'ring-2 ring-dashed ring-amber-400/60'
+                            }`}
                           />
-                          {partner.is_online && (
-                            <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white dark:border-[#060a14]" title={isFr ? "En ligne" : "Online"} />
+                          {partner.is_online ? (
+                            <span 
+                              className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white dark:border-[#060a14] shadow-[0_0_8px_rgba(16,185,129,0.8)]" 
+                              title="on line" 
+                            />
+                          ) : (
+                            <span 
+                              className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-dashed border-amber-400 bg-amber-500/40" 
+                              title="outline" 
+                            />
                           )}
                         </div>
-                        <div>
-                          <h3 className="font-extrabold text-base text-slate-900 dark:text-white flex items-center gap-2">
-                            <span>{partner.name}</span>
-                            <span>{partner.flag}</span>
-                          </h3>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">{partner.country} • {partner.specialty}</p>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2 mb-0.5">
+                            <h3 className="font-extrabold text-base text-slate-900 dark:text-white flex items-center gap-2 truncate">
+                              <span>{partner.name}</span>
+                              <span>{partner.flag}</span>
+                            </h3>
+                            {partner.is_online ? (
+                              <span className="shrink-0 text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/40 inline-flex items-center gap-1 uppercase tracking-wider">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                on line
+                              </span>
+                            ) : (
+                              <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border border-dashed border-amber-400/80 bg-amber-500/10 text-amber-600 dark:text-amber-300 inline-flex items-center gap-1 uppercase tracking-wider">
+                                outline
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{partner.country} • {partner.specialty}</p>
                           
                           <div className="flex items-center gap-1.5 mt-1 text-xs text-emerald-600 dark:text-emerald-400 font-bold">
                             <Flame className="w-3.5 h-3.5 fill-emerald-500 text-emerald-500" />
