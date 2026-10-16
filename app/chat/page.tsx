@@ -312,7 +312,7 @@ function RealConversationContent() {
   // Share message via Web Share API or Clipboard
   const handleShareMessage = async (msg: ChatMessage) => {
     playSound?.('click');
-    const shareText = `"${msg.text}" — ${msg.sender_name} on English Booster`;
+    const shareText = `"${msg?.text || ''}" — ${msg?.sender_name || 'Partner'} on English Booster`;
     if (typeof navigator !== 'undefined' && navigator.share) {
       try {
         await navigator.share({
@@ -1067,8 +1067,8 @@ function RealConversationContent() {
 
   // Copy message text to clipboard
   const handleCopyMessage = (text: string, id: string) => {
-    if (navigator?.clipboard) {
-      navigator.clipboard.writeText(text);
+    if (typeof navigator !== 'undefined' && navigator?.clipboard && text) {
+      navigator.clipboard.writeText(text).catch(() => {});
       setCopiedMsgId(id);
       playSound?.('click');
       setTimeout(() => setCopiedMsgId(null), 2000);
@@ -1176,8 +1176,10 @@ function RealConversationContent() {
             saveConversation(nextMap);
             return nextMap;
           });
+        }
 
-          // Immediately notify online partner via Supabase Realtime broadcast
+        // Notify partner via Supabase Realtime broadcast and background Web Push (hors application)
+        try {
           broadcastNewMessage({
             senderId: user.id,
             senderName: profile?.full_name || 'English Learner',
@@ -1186,7 +1188,7 @@ function RealConversationContent() {
             text: textToSend,
             conversationId: conversationId || undefined,
           });
-        }
+        } catch {}
       }
     } catch (err) {
       console.warn('Real message stored locally:', err);
@@ -1493,7 +1495,11 @@ function RealConversationContent() {
     setSpeakingMsgId(msgId);
     playSound?.('click');
 
-    const cleanText = text.replace(/^[^\w]+/, '');
+    const cleanText = (text || '').replace(/^[^\w]+/, '');
+    if (!cleanText) {
+      setSpeakingMsgId(null);
+      return;
+    }
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = 'en-US';
     utterance.rate = 0.95;
@@ -2078,7 +2084,7 @@ function RealConversationContent() {
                       </div>
 
                       <p className="text-xs text-slate-400 truncate">
-                        {lastMsg ? lastMsg.text : partner.specialty}
+                        {lastMsg ? (lastMsg.text || '') : (partner.specialty || '')}
                       </p>
                     </div>
                   </button>
@@ -2299,7 +2305,9 @@ function RealConversationContent() {
                             <div
                               onClick={(e) => {
                                 e.stopPropagation();
-                                scrollToMessage(msg.reply_to!.id);
+                                if (msg.reply_to?.id) {
+                                  scrollToMessage(msg.reply_to.id);
+                                }
                               }}
                               className="mb-2 p-2 rounded-xl bg-black/30 border-l-4 border-emerald-400 hover:bg-black/50 transition-colors cursor-pointer text-left select-none group/quote"
                               title="Cliquer pour faire défiler jusqu'au message cité"
@@ -2366,7 +2374,7 @@ function RealConversationContent() {
                               );
                             }
 
-                            return <p className="whitespace-pre-line text-sm break-words pr-4">{msg.text}</p>;
+                            return <p className="whitespace-pre-line text-sm break-words pr-4">{msg?.text || ''}</p>;
                           })()}
 
                           {/* Real Voice Note Player */}
@@ -2499,7 +2507,7 @@ function RealConversationContent() {
                                   <span title="Lu par le partenaire (Deux traits bleus)">
                                     <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />
                                   </span>
-                                ) : (!activePartner.is_online || msg.status === 'sent') ? (
+                                ) : (!activePartner?.is_online || msg.status === 'sent') ? (
                                   <span title="Envoyé (Partenaire non connecté : 1 trait)">
                                     <Check className="w-3.5 h-3.5 text-slate-300" />
                                   </span>

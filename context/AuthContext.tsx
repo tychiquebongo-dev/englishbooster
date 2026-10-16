@@ -316,7 +316,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const resolvedName = targetName || (isFounder ? 'Tychique Bongo' : (cleanEmail ? cleanEmail.split('@')[0] : 'English Learner'));
 
     let matchedProfile: Profile | null = null;
-    let userId = isFounder ? '30c6222c-7d9e-4086-a289-19ca5b81262c' : `bypass-${Date.now()}`;
+    let userId = isFounder ? '30c6222c-7d9e-4086-a289-19ca5b81262c' : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `b0000000-0000-4000-8000-${Date.now().toString(16).padStart(12, '0')}`);
 
     try {
       const { data } = await supabase
