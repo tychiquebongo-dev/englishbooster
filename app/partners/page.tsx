@@ -596,7 +596,7 @@ export default function PartnersPage() {
                       </Link>
 
                       <Link
-                        href={`/call?partnerId=${partner.id}&partnerName=${encodeURIComponent(partner.name)}`}
+                        href={`/call?partnerId=${partner.id}&partnerName=${encodeURIComponent(partner.name)}&video=true&roomId=room_${user?.id ? [user.id, partner.id].sort().join('_') : partner.id}_${Date.now()}`}
                         onClick={() => playSound('call')}
                         className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 dark:from-emerald-400 dark:to-teal-300 hover:opacity-95 text-slate-950 text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(74,222,128,0.25)]"
                       >

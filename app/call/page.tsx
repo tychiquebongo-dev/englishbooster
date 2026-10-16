@@ -19,10 +19,14 @@ import {
   ArrowRight,
   ShieldAlert,
   Flame,
-  CheckCircle2
+  CheckCircle2,
+  Phone,
+  PhoneForwarded
 } from 'lucide-react';
 import Link from 'next/link';
 import { initPeerInstance, getCleanPeerId, stopLocalMediaStream } from '@/lib/webrtcCall';
+import { getUserAvatar } from '@/lib/avatarHelper';
+import { broadcastIncomingCall, broadcastCallEnded, broadcastPartnerReady } from '@/lib/callSignaling';
 
 const DISCUSSION_PROMPTS = [
   "What is your dream travel destination and what would you do there first?",
@@ -40,8 +44,11 @@ function CallContent() {
   const { isFr } = useTranslation();
   const partnerId = searchParams?.get('partnerId');
   const partnerName = searchParams?.get('partnerName') || (isFr ? 'Partenaire Inscrit' : 'Registered Partner');
+  const isVideoParam = searchParams?.get('video') !== 'false';
   const { user, profile, playSound, refreshProfile } = useAuth();
   const supabase = createClient();
+
+  const roomId = searchParams?.get('roomId') || (user?.id && partnerId ? `room_${[user.id, partnerId].sort().join('_')}` : `room_${Date.now()}`);
 
   const [partnerProfile, setPartnerProfile] = useState<{
     id: string;
@@ -52,6 +59,24 @@ function CallContent() {
     country: string | null;
   } | null>(null);
 
+  const [micActive, setMicActive] = useState(true);
+  const [videoActive, setVideoActive] = useState(isVideoParam);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [durationSeconds, setDurationSeconds] = useState(0);
+  const [currentPromptIndex, setCurrentPromptIndex] = useState(0);
+  const [callEnded, setCallEnded] = useState(false);
+  const [savingCall, setSavingCall] = useState(false);
+  const [permissionError, setPermissionError] = useState(false);
+  const [hasRemoteStream, setHasRemoteStream] = useState(false);
+  const [remoteEndedNotice, setRemoteEndedNotice] = useState<string | null>(null);
+  const [callDeclined, setCallDeclined] = useState(false);
+
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const peerInstanceRef = useRef<any>(null);
+
+  // Fetch partner profile
   useEffect(() => {
     if (!partnerId) return;
     const fetchPartner = async () => {
@@ -71,20 +96,82 @@ function CallContent() {
     fetchPartner();
   }, [partnerId, supabase]);
 
-  const [micActive, setMicActive] = useState(true);
-  const [videoActive, setVideoActive] = useState(true);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [durationSeconds, setDurationSeconds] = useState(0);
-  const [currentPromptIndex, setCurrentPromptIndex] = useState(0);
-  const [callEnded, setCallEnded] = useState(false);
-  const [savingCall, setSavingCall] = useState(false);
-  const [permissionError, setPermissionError] = useState(false);
-  const [hasRemoteStream, setHasRemoteStream] = useState(false);
+  // Realtime Signaling: Listen for hangup, decline, or partner entering the room
+  useEffect(() => {
+    if (!roomId) return;
+    const roomChannel = supabase.channel(`call-room-${roomId}`);
 
-  const localVideoRef = useRef<HTMLVideoElement | null>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const peerInstanceRef = useRef<any>(null);
+    roomChannel
+      .on('broadcast', { event: 'call_ended' }, () => {
+        playSound('chime');
+        setRemoteEndedNotice(isFr ? 'Votre partenaire a mis fin à l\'appel.' : 'Your partner has ended the call.');
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+        }
+        setCallEnded(true);
+      })
+      .on('broadcast', { event: 'call_declined' }, () => {
+        playSound('chime');
+        setCallDeclined(true);
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+        }
+      })
+      .on('broadcast', { event: 'partner_ready' }, ({ payload }: any) => {
+        // Partner is in the room and ready for WebRTC handshake
+        if (payload?.userId !== user?.id && peerInstanceRef.current && partnerId && streamRef.current && !hasRemoteStream) {
+          const remotePeerId = getCleanPeerId(partnerId);
+          try {
+            const outgoingCall = peerInstanceRef.current.call(remotePeerId, streamRef.current, {
+              metadata: {
+                callerId: user?.id,
+                callerName: profile?.full_name || 'English Learner',
+                isVideo: isVideoParam,
+              },
+            });
+            outgoingCall.on('stream', (remoteStream: MediaStream) => {
+              setHasRemoteStream(true);
+              if (remoteVideoRef.current) {
+                remoteVideoRef.current.srcObject = remoteStream;
+              }
+            });
+            outgoingCall.on('close', () => {
+              setRemoteEndedNotice(isFr ? 'Votre partenaire a mis fin à l\'appel.' : 'Your partner has ended the call.');
+              setCallEnded(true);
+            });
+          } catch (e) {
+            console.warn('partner_ready call attempt:', e);
+          }
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(roomChannel);
+    };
+  }, [roomId, supabase, playSound, isFr, user?.id, partnerId, hasRemoteStream, isVideoParam, profile]);
+
+  // Broadcast incoming call to partner when caller mounts page (unless auto-answering receiver)
+  useEffect(() => {
+    if (!user?.id || !partnerId) return;
+    const isAutoAnswer = searchParams?.get('autoAnswer') === 'true';
+
+    if (!isAutoAnswer) {
+      broadcastIncomingCall({
+        callerId: user.id,
+        callerName: profile?.full_name || 'English Learner',
+        callerAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
+        callerFlag: profile?.flag || '🌐',
+        callerLevel: profile?.current_level || 'B2',
+        receiverId: partnerId,
+        roomId: roomId,
+        isVideo: isVideoParam,
+      });
+    }
+
+    // Announce readiness to room
+    broadcastPartnerReady(roomId, user.id);
+  }, [user?.id, partnerId, roomId, isVideoParam, profile, searchParams]);
 
   // Initialize camera, microphone and remote PeerJS WebRTC connection
   useEffect(() => {
@@ -94,11 +181,11 @@ function CallContent() {
     const startMediaAndPeer = async () => {
       try {
         localStream = await navigator.mediaDevices.getUserMedia({
-          video: true,
+          video: isVideoParam,
           audio: true,
         });
         streamRef.current = localStream;
-        if (localVideoRef.current) {
+        if (localVideoRef.current && isVideoParam) {
           localVideoRef.current.srcObject = localStream;
         }
 
@@ -113,7 +200,7 @@ function CallContent() {
               metadata: {
                 callerId: user.id,
                 callerName: profile?.full_name || 'English Learner',
-                isVideo: true,
+                isVideo: isVideoParam,
               },
             });
 
@@ -122,6 +209,11 @@ function CallContent() {
               if (remoteVideoRef.current) {
                 remoteVideoRef.current.srcObject = remoteStream;
               }
+            });
+
+            call.on('close', () => {
+              setRemoteEndedNotice(isFr ? 'Votre partenaire a mis fin à l\'appel.' : 'Your partner has ended the call.');
+              setCallEnded(true);
             });
           }
 
@@ -133,6 +225,10 @@ function CallContent() {
                 if (remoteVideoRef.current) {
                   remoteVideoRef.current.srcObject = remoteStream;
                 }
+              });
+              incomingCall.on('close', () => {
+                setRemoteEndedNotice(isFr ? 'Votre partenaire a mis fin à l\'appel.' : 'Your partner has ended the call.');
+                setCallEnded(true);
               });
             });
           }
@@ -169,7 +265,7 @@ function CallContent() {
         } catch {}
       }
     };
-  }, [partnerId, user?.id, profile?.full_name, playSound]);
+  }, [partnerId, user?.id, profile?.full_name, playSound, isVideoParam, isFr]);
 
   // Toggle Mute
   const toggleMic = () => {
@@ -240,11 +336,16 @@ function CallContent() {
       streamRef.current.getTracks().forEach(track => track.stop());
     }
 
+    // Broadcast call_ended to room channel and partner immediately
+    if (roomId) {
+      broadcastCallEnded(roomId, partnerId || undefined, user?.id);
+    }
+
     // Persist call session in Supabase
     if (user?.id) {
       try {
         const minsSpoken = Math.max(1, Math.round(durationSeconds / 60));
-        const callRoomId = searchParams?.get('roomId') || `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const callRoomId = roomId || `room_${Date.now()}`;
         
         await supabase.from('calls').insert({
           caller_id: user.id,
@@ -338,10 +439,24 @@ function CallContent() {
                 </span>
               </div>
               <p className="mt-3 sm:mt-4 text-base sm:text-lg font-black text-white">{partnerName}</p>
-              <p className="text-[11px] sm:text-xs text-emerald-400 font-semibold flex items-center gap-1.5 mt-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span>{isFr ? 'En direct • Audio connecté' : 'Live • Audio connected'}</span>
-              </p>
+              <div className="text-[11px] sm:text-xs font-semibold flex items-center gap-1.5 mt-1">
+                {hasRemoteStream ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                    <span className="text-emerald-400">{isFr ? 'En direct • Connecté' : 'Live • Connected'}</span>
+                  </>
+                ) : callDeclined ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-rose-500" />
+                    <span className="text-rose-400">{isFr ? 'Appel refusé / Indisponible' : 'Call declined / Unavailable'}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                    <span className="text-amber-300">{isFr ? 'Sonnerie chez le partenaire...' : 'Ringing partner...'}</span>
+                  </>
+                )}
+              </div>
             </div>
           ) : (
             <div className="flex flex-col items-center text-center">
@@ -352,10 +467,24 @@ function CallContent() {
                 <span>{partnerName}</span>
                 <span>{partnerProfile?.flag || '🌐'}</span>
               </p>
-              <p className="text-[11px] sm:text-xs text-emerald-400 font-semibold flex items-center gap-1.5 mt-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span>{isFr ? 'En direct • Audio connecté' : 'Live • Audio connected'}</span>
-              </p>
+              <div className="text-[11px] sm:text-xs font-semibold flex items-center gap-1.5 mt-1">
+                {hasRemoteStream ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                    <span className="text-emerald-400">{isFr ? 'En direct • Connecté' : 'Live • Connected'}</span>
+                  </>
+                ) : callDeclined ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-rose-500" />
+                    <span className="text-rose-400">{isFr ? 'Appel refusé / Indisponible' : 'Call declined / Unavailable'}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                    <span className="text-amber-300">{isFr ? 'Sonnerie chez le partenaire...' : 'Ringing partner...'}</span>
+                  </>
+                )}
+              </div>
             </div>
           )}
 
@@ -509,12 +638,19 @@ function CallContent() {
 
             <div className="space-y-2">
               <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                {isFr ? "Félicitations pour cette session !" : "Congratulations on this session!"}
+                {isFr ? "Session de Conversation Terminée" : "Conversation Session Ended"}
               </h3>
               <p className="text-slate-600 dark:text-slate-400 text-sm">
-                {isFr ? "Vous avez parlé pendant" : "You spoke for"} <strong className="text-slate-900 dark:text-white">{formatTimer(durationSeconds)}</strong> {isFr ? "avec" : "with"} {partnerName}.
+                {isFr ? "Vous avez échangé pendant" : "You conversed for"} <strong className="text-slate-900 dark:text-white">{formatTimer(durationSeconds)}</strong> {isFr ? "avec" : "with"} {partnerName}.
               </p>
             </div>
+
+            {remoteEndedNotice && (
+              <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold flex items-center justify-center gap-2">
+                <span>⚡</span>
+                <span>{remoteEndedNotice}</span>
+              </div>
+            )}
 
             <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 grid grid-cols-2 gap-4">
               <div>
@@ -536,7 +672,7 @@ function CallContent() {
                 {isFr ? "Retour au Tableau de Bord" : "Return to Dashboard"}
               </Link>
               <Link
-                href={`/chat?partnerName=${encodeURIComponent(partnerName)}`}
+                href={`/chat?partnerId=${partnerId}&partnerName=${encodeURIComponent(partnerName)}`}
                 onClick={() => playSound('click')}
                 className="w-full py-3 rounded-xl border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors"
               >
@@ -544,6 +680,43 @@ function CallContent() {
               </Link>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* CALL DECLINED MODAL */}
+      {callDeclined && !callEnded && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xl animate-fadeIn">
+          <div className="saas-card max-w-md w-full p-8 text-center space-y-6 bg-white dark:bg-[#0a1124] border-rose-500/40 shadow-2xl">
+            <div className="w-16 h-16 rounded-3xl bg-rose-500/15 border border-rose-500/30 mx-auto flex items-center justify-center text-rose-400 shadow-lg">
+              <PhoneOff className="w-8 h-8" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-black text-slate-900 dark:text-white">
+                {isFr ? "Partenaire Indisponible" : "Partner Unavailable"}
+              </h3>
+              <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
+                {isFr 
+                  ? `${partnerName} n'a pas pu décrocher ou a refusé l'appel pour le moment.` 
+                  : `${partnerName} was unable to answer or declined the call.`}
+              </p>
+            </div>
+            <div className="flex flex-col gap-3">
+              <Link
+                href="/partners"
+                onClick={() => playSound('click')}
+                className="w-full py-3.5 rounded-xl font-bold text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-300 text-sm shadow-md"
+              >
+                {isFr ? "Trouver un autre partenaire" : "Find another partner"}
+              </Link>
+              <Link
+                href={`/chat?partnerId=${partnerId}&partnerName=${encodeURIComponent(partnerName)}`}
+                onClick={() => playSound('click')}
+                className="w-full py-3 rounded-xl border border-slate-200 dark:border-white/10 hover:bg-white/5 text-slate-700 dark:text-slate-300 text-xs font-semibold"
+              >
+                {isFr ? "Envoyer un message à la place" : "Send a message instead"}
+              </Link>
+            </div>
           </div>
         </div>
       )}

@@ -730,7 +730,7 @@ export default function ChallengesPage() {
                           </div>
 
                           <Link
-                            href={`/call?partnerId=${partner.id}&partnerName=${encodeURIComponent(partner.full_name)}&challengeTopic=${encodeURIComponent(selectedChallenge.title)}`}
+                            href={`/call?partnerId=${partner.id}&partnerName=${encodeURIComponent(partner.full_name)}&challengeTopic=${encodeURIComponent(selectedChallenge.title)}&video=true&roomId=room_${user?.id ? [user.id, partner.id].sort().join('_') : partner.id}_${Date.now()}`}
                             onClick={() => playSound('call')}
                             className="px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
                             title={isFr ? "Lancer le défi en direct" : "Start live direct challenge"}

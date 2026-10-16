@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { getUserAvatar } from '@/lib/avatarHelper';
 import { isRealPartnerProfile } from '@/lib/partnerHelper';
+import { broadcastNewMessage } from '@/lib/callSignaling';
 import { 
   initPeerInstance, 
   getLocalUserMedia, 
@@ -161,6 +162,7 @@ function detectGrammarIssue(text: string) {
 }
 
 function RealConversationContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const partnerIdParam = searchParams ? searchParams.get('partnerId') : null;
   const partnerNameParam = searchParams ? searchParams.get('partnerName') : null;
@@ -542,61 +544,15 @@ function RealConversationContent() {
     setIncomingCallData(null);
   };
 
-  // Start Outgoing Remote Call using PeerJS API
-  const handleStartRemoteCall = async (videoMode: boolean) => {
+  // Start Outgoing Remote Call by routing directly to the dedicated Call Room
+  const handleStartRemoteCall = (videoMode: boolean) => {
     if (!activePartner || !user?.id) {
       if (!user?.id) alert("Please sign in to make calls.");
       return;
     }
     playSound?.('call');
-
-    setCallIsVideo(videoMode);
-    setCallActive(true);
-    setCallStatus('calling');
-    setCallDuration(0);
-    setIsCallMuted(false);
-    setIsCameraOff(false);
-
-    const stream = await getLocalUserMedia(videoMode);
-    setLocalStream(stream);
-
-    const remotePeerId = getCleanPeerId(activePartner.id);
-    const peer = peerInstanceRef.current || await initPeerInstance(user.id);
-
-    if (!peer) {
-      alert("Unable to establish remote WebRTC peer connection. Please verify your connection.");
-      setCallActive(false);
-      return;
-    }
-
-    const mediaCall = peer.call(remotePeerId, stream, {
-      metadata: {
-        callerId: user.id,
-        callerName: profile?.full_name || 'English Learner',
-        callerAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
-        isVideo: videoMode,
-      },
-    });
-
-    activeMediaCallRef.current = mediaCall;
-
-    mediaCall.on('stream', (rStream: MediaStream) => {
-      setRemoteStream(rStream);
-      setCallStatus('connected');
-    });
-
-    mediaCall.on('close', () => {
-      handleEndCall();
-    });
-
-    mediaCall.on('error', (err: any) => {
-      console.warn('Media call notice:', err);
-    });
-
-    if (callTimerRef.current) clearInterval(callTimerRef.current);
-    callTimerRef.current = setInterval(() => {
-      setCallDuration(s => s + 1);
-    }, 1000);
+    const roomId = `room_${[user.id, activePartner.id].sort().join('_')}_${Date.now()}`;
+    router.push(`/call?partnerId=${activePartner.id}&partnerName=${encodeURIComponent(activePartner.name)}&video=${videoMode}&roomId=${roomId}`);
   };
 
   // End Remote Call & Save Call Summary to Database
@@ -795,6 +751,16 @@ function RealConversationContent() {
           saveConversation(nextMap);
           return nextMap;
         });
+
+        // Immediately notify online partner via Supabase Realtime broadcast
+        broadcastNewMessage({
+          senderId: user.id,
+          senderName: profile?.full_name || 'English Learner',
+          senderAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
+          receiverId: targetPartnerId,
+          text: textToSend,
+          conversationId: conversationId || undefined,
+        });
       }
     } catch (err) {
       console.warn('Real message stored locally:', err);
@@ -872,6 +838,16 @@ function RealConversationContent() {
                 sender_id: user.id,
                 text: `🎙️ Voice Note (${recordingSeconds}s)`,
                 audio_url: base64Audio,
+              });
+
+              // Notify partner in real time
+              broadcastNewMessage({
+                senderId: user.id,
+                senderName: profile?.full_name || 'English Learner',
+                senderAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
+                receiverId: targetPartnerId,
+                text: `🎙️ Voice Note (${recordingSeconds}s)`,
+                conversationId: convId || undefined,
               });
             }
           } catch (e) {
