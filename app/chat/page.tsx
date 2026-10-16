@@ -8,6 +8,14 @@ import { getUserAvatar } from '@/lib/avatarHelper';
 import { isRealPartnerProfile } from '@/lib/partnerHelper';
 import { broadcastNewMessage } from '@/lib/callSignaling';
 import { 
+  initPeerInstance, 
+  getLocalUserMedia, 
+  stopLocalMediaStream, 
+  getCleanPeerId,
+  toggleAudioMute,
+  toggleCamera 
+} from '@/lib/webrtcCall';
+import { 
   Send, 
   Mic, 
   Square, 
