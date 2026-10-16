@@ -32,7 +32,7 @@ import {
   Volume2, 
   VolumeX,
   UserPlus, 
-  Keyboard, 
+  Paperclip,
   PhoneOff, 
   MicOff, 
   VideoOff, 
@@ -52,7 +52,6 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import InvitePartnerModal from '@/components/InvitePartnerModal';
-import EnglishVirtualKeyboard from '@/components/EnglishVirtualKeyboard';
 import type { Database } from '@/lib/database.types';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -86,23 +85,6 @@ interface ChatMessage {
   status?: 'sent' | 'delivered' | 'read';
   reply_to?: ChatReplyTo | null;
 }
-
-const ENGLISH_KEYBOARD_SHORTCUTS = [
-  "I'm",
-  "I don't",
-  "Can you",
-  "Could you",
-  "How are you?",
-  "Nice to meet you!",
-  "That's great!",
-  "Let's practice!",
-  "What do you think?",
-  "By the way",
-  "'ll",
-  "'re",
-  "'ve",
-  "n't"
-];
 
 const POPULAR_EMOJIS = ['😊', '👍', '🔥', '❤️', '🇬🇧', '👋', '🎉', '💡', '☕', '🚀', '✨', '🌍', '👏', '🎯', '💯'];
 
@@ -285,7 +267,7 @@ function RealConversationContent() {
 
   // Drawers and assistants
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [showEnglishKeyboard, setShowEnglishKeyboard] = useState(true);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
   const [grammarSuggestion, setGrammarSuggestion] = useState<{ original: string; corrected: string; explanation: string } | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -1338,17 +1320,6 @@ function RealConversationContent() {
     window.speechSynthesis.speak(utterance);
   };
 
-  // Keyboard shortcut insertion
-  const handleInsertEnglishText = (snippet: string) => {
-    playSound?.('click');
-    setInputText((prev) => {
-      if (!prev) return snippet.startsWith("'") ? snippet : `${snippet} `;
-      if (snippet.startsWith("'")) return `${prev.trimEnd()}${snippet} `;
-      return `${prev.trimEnd()} ${snippet} `;
-    });
-    inputRef.current?.focus();
-  };
-
   // Filtered partners based on search
   const filteredPartners = useMemo(() => {
     let list = partners;
@@ -1992,65 +1963,48 @@ function RealConversationContent() {
                   </div>
                 </div>
 
-                {/* Distinct WebRTC Calling Buttons & Delete Options */}
-                <div className="flex items-center gap-1.5 sm:gap-2 text-slate-300">
-                  {/* Distinct Emerald Audio Call Button (with Outline style if partner offline) */}
-                  <button
-                    type="button"
-                    onClick={() => handleStartRemoteCall(false)}
-                    className={`flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 rounded-full transition-all shadow-sm hover:scale-105 active:scale-95 group cursor-pointer ${
-                      !activePartner.is_online
-                        ? 'bg-amber-500/10 hover:bg-amber-500/20 border-2 border-dashed border-amber-400/80 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
-                        : 'bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 hover:text-emerald-200'
-                    }`}
-                    title={!activePartner.is_online ? "Outline : Partenaire hors ligne (cliquer pour appeler quand même)" : "On line : Launch Encrypted Voice Call"}
-                  >
-                    <div className="relative">
-                      <Phone className={`w-4 h-4 group-hover:scale-110 transition-transform ${
-                        !activePartner.is_online ? 'text-amber-400' : 'fill-emerald-500/30 text-emerald-400'
-                      }`} />
-                      {activePartner.is_online ? (
-                        <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                      ) : (
-                        <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-400" />
-                      )}
-                    </div>
-                    <span className="hidden sm:inline text-xs font-bold">Audio Call</span>
-                    {activePartner.is_online ? (
-                      <span className="hidden md:inline text-[9px] px-1 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 uppercase font-black tracking-tight">
-                        On line
-                      </span>
-                    ) : (
-                      <span className="hidden md:inline text-[9px] px-1 rounded border border-dashed border-amber-400/80 text-amber-300 uppercase font-black tracking-tight">
-                        Outline
-                      </span>
-                    )}
-                  </button>
-
-                  {/* Distinct Cyan Video Call Button (with Outline style if partner offline) */}
+                {/* WhatsApp Action Icons (Video, Audio, Search, More Menu) */}
+                <div className="flex items-center gap-1 sm:gap-2 text-[#aebac1]">
+                  {/* WhatsApp Video Call */}
                   <button
                     type="button"
                     onClick={() => handleStartRemoteCall(true)}
-                    className={`flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 rounded-full transition-all hover:scale-105 active:scale-95 group cursor-pointer ${
-                      !activePartner.is_online
-                        ? 'bg-amber-500/10 hover:bg-amber-500/20 border-2 border-dashed border-amber-400/80 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
-                        : 'bg-gradient-to-r from-cyan-500/20 to-blue-600/20 hover:from-cyan-500/30 hover:to-blue-600/30 border border-cyan-400/40 text-cyan-300 hover:text-white shadow-[0_0_15px_rgba(6,182,212,0.25)]'
-                    }`}
-                    title={!activePartner.is_online ? "Outline : Partenaire hors ligne (cliquer pour appeler quand même)" : "On line : Launch HD Video Call & Camera Viewfinder"}
+                    className="p-2 sm:p-2.5 rounded-full hover:bg-white/10 text-[#aebac1] hover:text-white transition-colors cursor-pointer"
+                    title={activePartner.is_online ? "HD Video Call (on line)" : "HD Video Call (outline)"}
                   >
-                    <Video className={`w-4 h-4 group-hover:scale-110 transition-transform ${
-                      !activePartner.is_online ? 'text-amber-400' : 'text-cyan-400 fill-cyan-400/20 group-hover:text-cyan-300'
-                    }`} />
-                    <span className="hidden sm:inline text-xs font-black tracking-wide">Video Call</span>
-                    {activePartner.is_online ? (
-                      <span className="hidden md:inline text-[9px] px-1 rounded bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 uppercase font-black tracking-tight">
-                        On line
-                      </span>
-                    ) : (
-                      <span className="hidden md:inline text-[9px] px-1 rounded border border-dashed border-amber-400/80 text-amber-300 uppercase font-black tracking-tight">
-                        Outline
-                      </span>
-                    )}
+                    <Video className="w-5 h-5" />
+                  </button>
+
+                  {/* WhatsApp Voice Call */}
+                  <button
+                    type="button"
+                    onClick={() => handleStartRemoteCall(false)}
+                    className="p-2 sm:p-2.5 rounded-full hover:bg-white/10 text-[#aebac1] hover:text-white transition-colors cursor-pointer"
+                    title={activePartner.is_online ? "Voice Call (on line)" : "Voice Call (outline)"}
+                  >
+                    <Phone className="w-5 h-5" />
+                  </button>
+
+                  <span className="h-6 w-px bg-white/10 mx-1 hidden sm:block" />
+
+                  {/* Search in chat */}
+                  <button
+                    type="button"
+                    onClick={() => {}}
+                    className="p-2 sm:p-2.5 rounded-full hover:bg-white/10 text-[#aebac1] hover:text-white transition-colors cursor-pointer hidden xs:flex"
+                    title="Search in conversation"
+                  >
+                    <Search className="w-5 h-5" />
+                  </button>
+
+                  {/* WhatsApp Three-Dots Menu */}
+                  <button
+                    type="button"
+                    onClick={() => setShowClearConfirm(true)}
+                    className="p-2 sm:p-2.5 rounded-full hover:bg-white/10 text-[#aebac1] hover:text-white transition-colors cursor-pointer"
+                    title="Menu / Clear conversation"
+                  >
+                    <MoreVertical className="w-5 h-5" />
                   </button>
 
                   {/* Clear / Delete Conversation Button */}
@@ -2341,36 +2295,23 @@ function RealConversationContent() {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Starters Bar */}
-              <div className="px-3 py-1.5 bg-[#111b21] border-t border-white/5 flex items-center gap-2 overflow-x-auto scrollbar-none shrink-0">
-                {CONVERSATION_STARTERS.map((starter, i) => (
-                  <button
-                    key={i}
-                    onClick={() => handleSendMessage(undefined, starter)}
-                    className="shrink-0 px-2.5 py-1 rounded-full bg-[#202c33] hover:bg-[#2a3942] border border-white/5 text-slate-300 text-[11px] font-medium transition-colors"
-                  >
-                    {starter}
-                  </button>
-                ))}
-              </div>
-
-              {/* Compose Bar */}
-              <div className="p-2 sm:p-3 bg-[#202c33] border-t border-white/10 shrink-0 safe-pb">
+              {/* Compose Bar (WhatsApp Authentic) */}
+              <div className="p-2 sm:p-3 bg-[#202c33] border-t border-[#2a3942] shrink-0 safe-pb relative">
                 
                 {/* Replying To Quote Banner (WhatsApp Style) */}
                 {replyingTo && (
-                  <div className="mb-2 p-2.5 rounded-xl bg-[#111b21] border-l-4 border-emerald-500 border-y border-r border-white/10 flex items-center justify-between gap-3 animate-fade-in shadow-md">
+                  <div className="mb-2 p-2.5 rounded-xl bg-[#111b21] border-l-4 border-[#00a884] border-y border-r border-white/10 flex items-center justify-between gap-3 animate-fade-in shadow-md">
                     <button
                       type="button"
                       onClick={() => scrollToMessage(replyingTo.id)}
                       className="flex-1 text-left min-w-0 cursor-pointer"
                       title="Cliquer pour faire défiler jusqu'au message / Scroll to message"
                     >
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-[#00a884]">
                         <Reply className="w-3.5 h-3.5" />
                         <span>Répondre à {replyingTo.sender_name}</span>
                       </div>
-                      <p className="text-[11px] text-slate-300 truncate mt-0.5">
+                      <p className="text-[11px] text-[#8696a0] truncate mt-0.5">
                         {replyingTo.text || (replyingTo.audio_url ? '🎵 Message vocal / Voice note' : '')}
                       </p>
                     </button>
@@ -2378,7 +2319,7 @@ function RealConversationContent() {
                     <button
                       type="button"
                       onClick={() => setReplyingTo(null)}
-                      className="p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-colors shrink-0 cursor-pointer"
+                      className="p-1 rounded-full hover:bg-white/10 text-[#8696a0] hover:text-white transition-colors shrink-0 cursor-pointer"
                       title="Annuler la réponse"
                     >
                       <X className="w-4 h-4" />
@@ -2386,15 +2327,15 @@ function RealConversationContent() {
                   </div>
                 )}
 
-                {/* AI Grammar Correction Tooltip */}
+                {/* AI Grammar Correction Tooltip (Sleek Floating Chip) */}
                 {grammarSuggestion && (
-                  <div className="mb-2 p-2.5 rounded-xl bg-[#111b21] border border-amber-500/30 flex items-center justify-between gap-3 animate-fade-in">
+                  <div className="mb-2 p-2.5 rounded-xl bg-[#111b21] border border-amber-500/30 flex items-center justify-between gap-3 animate-fade-in shadow-lg">
                     <div className="text-xs">
                       <p className="font-bold text-white">
                         <span className="line-through text-rose-400 mr-1.5">{grammarSuggestion.original}</span>
-                        ➔ <span className="text-emerald-400 font-extrabold ml-1">{grammarSuggestion.corrected}</span>
+                        ➔ <span className="text-[#00a884] font-extrabold ml-1">{grammarSuggestion.corrected}</span>
                       </p>
-                      <p className="text-[11px] text-slate-400 mt-0.5">{grammarSuggestion.explanation}</p>
+                      <p className="text-[11px] text-[#8696a0] mt-0.5">{grammarSuggestion.explanation}</p>
                     </div>
                     <button
                       type="button"
@@ -2403,57 +2344,30 @@ function RealConversationContent() {
                         setGrammarSuggestion(null);
                         playSound?.('chime');
                       }}
-                      className="px-2.5 py-1 rounded-lg bg-[#00a884] text-slate-950 font-black text-xs shrink-0"
+                      className="px-2.5 py-1 rounded-lg bg-[#00a884] text-slate-950 font-black text-xs shrink-0 cursor-pointer"
                     >
                       Apply ✓
                     </button>
                   </div>
                 )}
 
-                {/* English Virtual Keyboard QWERTY (Always Accessible & Interactive) */}
-                {showEnglishKeyboard ? (
-                  <div className="mb-2 animate-fade-in">
-                    <EnglishVirtualKeyboard
-                      isOpen={true}
-                      onToggle={() => setShowEnglishKeyboard(false)}
-                      onInsertText={(text) => {
-                        setInputText(prev => prev + text);
-                        inputRef.current?.focus();
-                      }}
-                      onDeleteChar={() => {
-                        setInputText(prev => prev.slice(0, -1));
-                        inputRef.current?.focus();
-                      }}
-                      onClear={() => {
-                        setInputText('');
-                        inputRef.current?.focus();
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div className="mb-2 flex items-center justify-between gap-2 overflow-x-auto scrollbar-none py-1">
-                    <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-                      <span className="text-[10px] font-black text-[#00a884] px-1.5 shrink-0">🇬🇧 EN:</span>
-                      {ENGLISH_KEYBOARD_SHORTCUTS.slice(0, 8).map((item, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => handleInsertEnglishText(item)}
-                          className="shrink-0 px-2 py-0.5 rounded bg-[#202c33] hover:bg-[#2a3942] text-xs font-semibold text-white border border-white/5 active:scale-95 transition-all"
-                        >
-                          {item}
-                        </button>
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowEnglishKeyboard(true)}
-                      className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer ml-auto"
-                      title="Ouvrir le Clavier Anglais QWERTY"
-                    >
-                      <Keyboard className="w-3.5 h-3.5" />
-                      <span className="hidden xs:inline">Clavier Anglais</span>
-                    </button>
+                {/* WhatsApp Attachment Menu Popup */}
+                {showAttachMenu && (
+                  <div className="absolute bottom-16 left-6 p-2 rounded-2xl bg-[#233138] border border-white/10 shadow-2xl flex flex-col gap-1 z-30 animate-fade-in w-56">
+                    <span className="text-[10px] font-black uppercase text-[#8696a0] px-2.5 py-1">Quick Practice Topics</span>
+                    {CONVERSATION_STARTERS.slice(0, 4).map((starter, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => {
+                          handleSendMessage(undefined, starter);
+                          setShowAttachMenu(false);
+                        }}
+                        className="w-full text-left px-2.5 py-1.5 rounded-xl hover:bg-white/10 text-xs text-[#e9edef] truncate transition-colors"
+                      >
+                        {starter}
+                      </button>
+                    ))}
                   </div>
                 )}
 
@@ -2469,7 +2383,7 @@ function RealConversationContent() {
                           setShowEmojiPicker(false);
                           inputRef.current?.focus();
                         }}
-                        className="text-lg hover:scale-125 transition-transform p-1"
+                        className="text-lg hover:scale-125 transition-transform p-1 cursor-pointer"
                       >
                         {emoji}
                       </button>
@@ -2477,7 +2391,7 @@ function RealConversationContent() {
                   </div>
                 )}
 
-                {/* Recording Bar or Input Form */}
+                {/* Recording Bar or WhatsApp Input Form */}
                 {isRecording ? (
                   <div className="p-2 sm:p-2.5 rounded-2xl bg-[#182229] border border-rose-500/40 flex items-center justify-between gap-2 sm:gap-4 shadow-lg animate-fade-in">
                     <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -2521,25 +2435,28 @@ function RealConversationContent() {
                     </div>
                   </div>
                 ) : (
-                  <form onSubmit={handleSendMessage} className="flex items-center gap-1.5 sm:gap-2">
+                  <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+                    {/* WhatsApp Emoji Button */}
                     <button
                       type="button"
                       onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                      className="p-1.5 sm:p-2 text-slate-400 hover:text-white transition-colors shrink-0"
+                      className="p-1.5 text-[#8696a0] hover:text-[#d1d7db] transition-colors shrink-0 cursor-pointer"
                       title="Emojis"
                     >
-                      <Smile className="w-5 h-5" />
+                      <Smile className="w-6 h-6" />
                     </button>
 
+                    {/* WhatsApp Attachment Button */}
                     <button
                       type="button"
-                      onClick={() => setShowEnglishKeyboard(!showEnglishKeyboard)}
-                      className={`p-1.5 sm:p-2 transition-all rounded-lg shrink-0 ${showEnglishKeyboard ? 'text-slate-950 bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.4)]' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}
-                      title={showEnglishKeyboard ? "Masquer le Clavier Anglais" : "Afficher le Clavier Anglais QWERTY"}
+                      onClick={() => setShowAttachMenu(!showAttachMenu)}
+                      className="p-1.5 text-[#8696a0] hover:text-[#d1d7db] transition-colors shrink-0 cursor-pointer"
+                      title="Attach / Quick topics"
                     >
-                      <Keyboard className="w-5 h-5" />
+                      <Paperclip className="w-5 h-5" />
                     </button>
 
+                    {/* Native WhatsApp Text Input Field */}
                     <input
                       ref={inputRef}
                       type="text"
@@ -2563,14 +2480,15 @@ function RealConversationContent() {
                           handleSendMessage();
                         }
                       }}
-                      placeholder={user ? `Message ${activePartner.name}...` : "Sign in to send messages..."}
-                      className="flex-1 min-w-0 py-2 sm:py-2.5 px-3 sm:px-4 bg-[#2a3942] border border-transparent focus:border-emerald-500 rounded-xl text-white placeholder-slate-400 text-base sm:text-sm focus:outline-none transition-colors"
+                      placeholder={user ? "Type a message" : "Sign in to send messages..."}
+                      className="flex-1 min-w-0 py-2.5 px-4 bg-[#2a3942] rounded-lg text-[#d1d7db] placeholder-[#8696a0] text-sm sm:text-[15px] focus:outline-none transition-colors border border-transparent"
                     />
 
+                    {/* WhatsApp Action: Send if text, Mic if empty */}
                     {inputText.trim() ? (
                       <button
                         type="submit"
-                        className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#00a884] text-slate-950 flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-all shrink-0"
+                        className="w-10 h-10 rounded-full bg-[#00a884] hover:bg-[#02906f] text-slate-950 flex items-center justify-center shadow-md active:scale-95 transition-all shrink-0 cursor-pointer"
                         title="Send Message"
                       >
                         <Send className="w-4 h-4 fill-slate-950 ml-0.5" />
@@ -2579,10 +2497,10 @@ function RealConversationContent() {
                       <button
                         type="button"
                         onClick={startRecording}
-                        className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#2a3942] text-slate-300 hover:text-[#00a884] hover:bg-[#202c33] flex items-center justify-center transition-colors shrink-0"
+                        className="w-10 h-10 rounded-full text-[#8696a0] hover:text-[#00a884] hover:bg-white/5 flex items-center justify-center transition-all shrink-0 cursor-pointer active:scale-95"
                         title="Record Voice Note"
                       >
-                        <Mic className="w-4 h-4 sm:w-5 sm:h-5" />
+                        <Mic className="w-6 h-6" />
                       </button>
                     )}
                   </form>
