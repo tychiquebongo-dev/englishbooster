@@ -27,8 +27,10 @@ import {
   isNativePwaInstallAvailable, 
   downloadWindowsUrlShortcut, 
   downloadWindowsCmdInstaller, 
-  downloadMobileLauncher 
+  downloadMobileLauncher,
+  openAndroidChromeIntent
 } from '@/lib/appInstaller';
+import AndroidInstallGuideModal from '@/components/AndroidInstallGuideModal';
 
 export default function DownloadAppPage() {
   const { isFr } = useTranslation();
@@ -38,6 +40,7 @@ export default function DownloadAppPage() {
   const [hasNativePrompt, setHasNativePrompt] = useState(false);
   const [installedSuccess, setInstalledSuccess] = useState(false);
   const [detectedOs, setDetectedOs] = useState<string>('PC Windows');
+  const [showAndroidGuideModal, setShowAndroidGuideModal] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -60,8 +63,15 @@ export default function DownloadAppPage() {
     setHasNativePrompt(isNativePwaInstallAvailable());
 
     const handlePromptReady = () => setHasNativePrompt(true);
+    const handleShowGuide = () => setShowAndroidGuideModal(true);
+
     window.addEventListener('eb_install_prompt_ready', handlePromptReady);
-    return () => window.removeEventListener('eb_install_prompt_ready', handlePromptReady);
+    window.addEventListener('eb_show_android_guide', handleShowGuide);
+
+    return () => {
+      window.removeEventListener('eb_install_prompt_ready', handlePromptReady);
+      window.removeEventListener('eb_show_android_guide', handleShowGuide);
+    };
   }, []);
 
   const handleNativeInstall = async () => {
@@ -70,6 +80,9 @@ export default function DownloadAppPage() {
     if (res === 'accepted') {
       playSound?.('success');
       setInstalledSuccess(true);
+    } else {
+      setShowAndroidGuideModal(true);
+      playSound?.('chime');
     }
   };
 
@@ -385,12 +398,25 @@ export default function DownloadAppPage() {
                         type="button"
                         onClick={() => {
                           playSound?.('click');
+                          openAndroidChromeIntent();
+                        }}
+                        className="py-3 px-5 rounded-2xl font-bold text-xs sm:text-sm text-white bg-white/10 hover:bg-white/15 border border-white/15 flex items-center gap-2 transition-colors cursor-pointer"
+                        title={isFr ? "Ouvrir directement dans Google Chrome pour installer" : "Open in Google Chrome to install"}
+                      >
+                        <ExternalLink className="w-4 h-4 text-cyan-400" />
+                        <span>{isFr ? "Ouvrir dans Chrome" : "Open in Chrome"}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playSound?.('click');
                           downloadMobileLauncher();
                         }}
                         className="py-3 px-5 rounded-2xl font-bold text-xs sm:text-sm text-white bg-white/10 hover:bg-white/15 border border-white/15 flex items-center gap-2 transition-colors cursor-pointer"
                       >
                         <FileDown className="w-4 h-4 text-emerald-400" />
-                        <span>{isFr ? "Télécharger Lanceur Web Mobile" : "Download Mobile Web Launcher"}</span>
+                        <span>{isFr ? "Télécharger Lanceur Web" : "Download Web Launcher"}</span>
                       </button>
                     </div>
                   </div>
@@ -597,6 +623,14 @@ export default function DownloadAppPage() {
             </Link>
           </div>
         </div>
+
+        {/* Android Installation Interactive Guide Modal */}
+        <AndroidInstallGuideModal
+          isOpen={showAndroidGuideModal}
+          onClose={() => setShowAndroidGuideModal(false)}
+          playSound={playSound}
+          onInstalledSuccess={() => setInstalledSuccess(true)}
+        />
 
       </div>
     </div>

@@ -18,12 +18,14 @@ const APP_URL = 'https://englishbooster.vercel.app';
 /**
  * Trigger native browser 1-Click PWA Installation
  */
-export async function triggerNativePwaInstall(): Promise<'accepted' | 'dismissed' | 'unsupported'> {
+export async function triggerNativePwaInstall(): Promise<'accepted' | 'dismissed' | 'unsupported' | 'guide'> {
   if (typeof window === 'undefined') return 'unsupported';
 
   const prompt = window.__eb_install_prompt;
   if (!prompt) {
-    return 'unsupported';
+    // Notify components to display the interactive Android Installation Guide Modal
+    window.dispatchEvent(new CustomEvent('eb_show_android_guide'));
+    return 'guide';
   }
 
   try {
@@ -35,8 +37,24 @@ export async function triggerNativePwaInstall(): Promise<'accepted' | 'dismissed
     }
     return 'dismissed';
   } catch (err) {
-    console.warn('Native PWA install error:', err);
-    return 'unsupported';
+    console.warn('Native PWA install error, opening guide:', err);
+    window.dispatchEvent(new CustomEvent('eb_show_android_guide'));
+    return 'guide';
+  }
+}
+
+/**
+ * Open URL in native Google Chrome on Android via Intent
+ * Useful when users are inside WhatsApp, Instagram or Facebook in-app browser
+ */
+export function openAndroidChromeIntent() {
+  if (typeof window === 'undefined') return;
+  try {
+    const currentUrl = window.location.href;
+    const cleanUrl = currentUrl.replace(/^https?:\/\//, '');
+    window.location.href = `intent://${cleanUrl}#Intent;scheme=https;package=com.android.chrome;end`;
+  } catch (e) {
+    window.open(APP_URL, '_blank');
   }
 }
 

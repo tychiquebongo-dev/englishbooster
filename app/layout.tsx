@@ -7,6 +7,7 @@ import Footer from '@/components/Footer';
 import CrystalBackground from '@/components/CrystalBackground';
 import QuickPracticeDock from '@/components/QuickPracticeDock';
 import GlobalCallNotifier from '@/components/GlobalCallNotifier';
+import PwaManager from '@/components/PwaManager';
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ['latin'],
@@ -76,6 +77,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen flex flex-col bg-[#030611] text-white selection:bg-emerald-500 selection:text-slate-950 font-sans relative">
         <AuthProvider>
+          <PwaManager />
           <GlobalCallNotifier />
           <CrystalBackground />
           <Navbar />

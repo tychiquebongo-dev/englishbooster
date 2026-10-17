@@ -23,8 +23,10 @@ import {
   isNativePwaInstallAvailable, 
   downloadWindowsUrlShortcut, 
   downloadWindowsCmdInstaller, 
-  downloadMobileLauncher 
+  downloadMobileLauncher,
+  openAndroidChromeIntent
 } from '@/lib/appInstaller';
+import AndroidInstallGuideModal from '@/components/AndroidInstallGuideModal';
 
 interface DownloadAppModalProps {
   isOpen: boolean;
@@ -82,6 +84,8 @@ export default function DownloadAppModal({
 
   if (!isOpen) return null;
 
+  const [showAndroidGuide, setShowAndroidGuide] = useState(false);
+
   const handleNativeInstall = async () => {
     playSound?.('click');
     const result = await triggerNativePwaInstall();
@@ -92,6 +96,9 @@ export default function DownloadAppModal({
         onClose();
         setInstalledSuccess(false);
       }, 2500);
+    } else {
+      setShowAndroidGuide(true);
+      playSound?.('chime');
     }
   };
 
@@ -310,23 +317,37 @@ export default function DownloadAppModal({
           {activeTab === 'mobile' && (
             <div className="space-y-4 animate-fade-in">
               
-              {/* Native Prompt if on Android device */}
-              {isMobileDevice && !isIOS && (
+              {/* Native Prompt if on Android device or viewing mobile */}
+              {!isIOS && (
                 <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-950/60 to-cyan-950/40 border border-emerald-500/40 space-y-2.5">
                   <div className="flex items-center gap-2">
                     <Zap className="w-4 h-4 text-emerald-400 animate-pulse" />
                     <span className="text-xs font-black uppercase tracking-wider text-emerald-300">
-                      {isFr ? "Installation Immédiate sur cet Appareil" : "Direct Installation on this Device"}
+                      {isFr ? "Installation Immédiate sur Android" : "Direct Installation on Android"}
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleNativeInstall}
-                    className="w-full py-3 px-4 rounded-xl font-black text-xs sm:text-sm text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-300 hover:opacity-95 shadow-[0_0_20px_rgba(52,211,153,0.4)] transition-all flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Download className="w-4 h-4 text-slate-950" />
-                    <span>{isFr ? "Installer sur mon Téléphone" : "Install on my Phone"}</span>
-                  </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={handleNativeInstall}
+                      className="py-3 px-4 rounded-xl font-black text-xs sm:text-sm text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-300 hover:opacity-95 shadow-[0_0_20px_rgba(52,211,153,0.4)] transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                    >
+                      <Download className="w-4 h-4 text-slate-950" />
+                      <span>{isFr ? "Installer sur Android (1-Clic)" : "Install on Android (1-Click)"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playSound?.('click');
+                        openAndroidChromeIntent();
+                      }}
+                      className="py-3 px-4 rounded-xl font-bold text-xs text-white bg-white/10 hover:bg-white/15 border border-white/10 flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <ExternalLink className="w-4 h-4 text-cyan-400" />
+                      <span>{isFr ? "Ouvrir dans Chrome" : "Open in Chrome"}</span>
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -485,6 +506,17 @@ export default function DownloadAppModal({
         </div>
 
       </div>
+
+      {/* Guided Android Installation Modal */}
+      <AndroidInstallGuideModal
+        isOpen={showAndroidGuide}
+        onClose={() => setShowAndroidGuide(false)}
+        playSound={playSound}
+        onInstalledSuccess={() => {
+          setInstalledSuccess(true);
+          onClose();
+        }}
+      />
     </div>
   );
 }
