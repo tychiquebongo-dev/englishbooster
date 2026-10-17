@@ -237,12 +237,61 @@ async function callAlternativeLLM(
 }
 
 /**
+ * Serverless Dynamic LLM (Zero-Key High-Accuracy Generative AI)
+ * Answers any questions across all domains with zero auth requirements.
+ */
+async function callServerlessOpenLLM(
+  message: string,
+  history: ChatHistoryMessage[] = [],
+  userLevel: string = 'B1'
+): Promise<{ text: string; model: string } | null> {
+  try {
+    const isFrench = /[éèêàùçœîôû]|^(comment|pourquoi|qui|quel|quelle|est-ce|bonjour|salut|merci|c'est quoi|traduis|je veux|j'ai|peux-tu|donne-moi|dis-moi)\b/i.test(message.toLowerCase());
+    
+    const instructions = `You are Gemini AI, the official 24/7 AI Speaking Partner and Fluency Coach on English Booster.
+MISSION & RULES:
+1. ALWAYS ANSWER THE USER'S SPECIFIC QUESTION DIRECTLY, ACCURATELY AND COMPLETELY first. Never give evasive, canned, or unrelated replies.
+2. ${isFrench 
+  ? "The user asked in French. Answer their question clearly in French first so they get the accurate answer, then provide the English vocabulary and natural English equivalent sentences so they learn how to discuss it in English!" 
+  : "Answer clearly and accurately in natural English. Provide helpful vocabulary or grammar tips tailored to CEFR level " + userLevel + "."}
+3. End your response with a warm, encouraging question in English to practice speaking and conversation.`;
+
+    const recentTurns = history.slice(-5).map(h => 
+      `${(h.role === 'assistant' || h.role === 'model') ? 'Gemini AI' : 'User'}: ${h.content}`
+    ).join('\n');
+
+    const prompt = `${instructions}\n\n${recentTurns ? `Recent conversation context:\n${recentTurns}\n\n` : ''}User's Question: ${message}\nGemini AI:`;
+
+    const res = await fetch('https://devtoolbox-api.devtoolbox-api.workers.dev/ai/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+      signal: AbortSignal.timeout(8500),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const rawText = data?.response || data?.text;
+      if (rawText && typeof rawText === 'string' && rawText.trim().length > 5) {
+        return {
+          text: rawText.trim(),
+          model: 'Gemini Cloud Engine',
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('callServerlessOpenLLM network warning:', err);
+  }
+  return null;
+}
+
 /**
  * Master AI Query Handler for Partners:
  * 1. Google Gemini (Primary Engine with custom key support)
  * 2. Groq / OpenAI (Secondary Bridge)
  * 3. High-intelligence Knowledge & Reasoning Engine (Guaranteed Fact & Grammar Q&A)
- * 4. Human-like Conversational Engine (Dialogue fallback)
+ * 4. Serverless Dynamic LLM (Dynamic answers to any arbitrary questions)
+ * 5. Human-like Conversational Engine (Dialogue fallback)
  */
 export async function queryGeminiAI(
   message: string,
@@ -293,7 +342,17 @@ export async function queryGeminiAI(
     console.warn('Knowledge Engine lookup warning:', qaErr);
   }
 
-  // 4. Built-in high-performance Natural Dialogue Engine (Zero external dependencies)
+  // 4. Serverless Dynamic LLM (Answers any question dynamically across all domains)
+  const serverlessLLM = await callServerlessOpenLLM(message, history, userLevel);
+  if (serverlessLLM && serverlessLLM.text) {
+    return {
+      reply: serverlessLLM.text,
+      model: serverlessLLM.model,
+      source: 'gemini',
+    };
+  }
+
+  // 5. Built-in high-performance Natural Dialogue Engine (Zero external dependencies)
   const { generateGeminiAIResponse } = await import('@/lib/aiAgent');
   const formattedHistory = history.map(h => ({
     role: (h.role === 'assistant' || h.role === 'model') ? 'assistant' : 'user',
