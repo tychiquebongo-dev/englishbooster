@@ -234,7 +234,7 @@ function CallContent() {
         );
         setCallEnded(true);
       }
-    }, 45000);
+    }, 70000);
 
     return () => clearTimeout(ringTimeout);
   }, [callStatus, isCaller, partnerId, user?.id, user?.email, isVideoParam, roomId, stopAllMedia]);

@@ -1,7 +1,7 @@
 // English Booster Production Service Worker for Background Call & Message Notifications
 // Handles Web Push events even when the application is closed or phone is locked (Hors-Application / Background)
 
-const EB_CACHE_NAME = 'eb-pwa-v5';
+const EB_CACHE_NAME = 'eb-pwa-v6';
 
 // Install event: Pre-cache PWA core assets for instant launch & background ringtones
 self.addEventListener('install', (event) => {
@@ -106,9 +106,9 @@ self.addEventListener('push', (event) => {
     requireInteraction: isCall,
     silent: false,
     sound: isCall ? '/assets/sounds/phone-ring.wav' : undefined,
-    // Realistic phone ringer physical vibration cadence (ringing pulse pattern lasting ~18 seconds)
+    // Realistic phone ringer physical vibration cadence lasting ~25s of continuous ringing
     vibrate: isCall 
-      ? [1000, 500, 1000, 500, 1000, 500, 1000, 500, 1000, 500, 1000, 500, 1000, 500, 1000, 500] 
+      ? [1000, 400, 1000, 400, 1000, 400, 1000, 400, 1000, 400, 1000, 400, 1000, 400, 1000, 400, 1000, 400] 
       : [250, 150, 250],
     data: {
       url: targetUrl,
@@ -182,8 +182,8 @@ self.addEventListener('notificationclick', (event) => {
   const fullTargetUrl = new URL(targetUrl, self.location.origin).href;
 
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windowClients) => {
-      // 1. If a window/tab is already open (even in background), focus it and navigate directly to call
+    (async () => {
+      const windowClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       for (const client of windowClients) {
         if ('focus' in client) {
           try {
@@ -207,11 +207,11 @@ self.addEventListener('notificationclick', (event) => {
         }
       }
 
-      // 2. If no window was open (app was closed or phone locked), launch new window directly into the call
+      // If no window was open (app was closed or phone locked), launch new window directly into the call
       if (self.clients.openWindow) {
-        return self.clients.openWindow(fullTargetUrl);
+        return await self.clients.openWindow(fullTargetUrl);
       }
-    })
+    })()
   );
 });
 

@@ -224,11 +224,7 @@ function RealConversationContent() {
   const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
   const [selectedMsgId, setSelectedMsgId] = useState<string | null>(null);
 
-  // Offline Call Warning Modal
-  const [showOfflineCallModal, setShowOfflineCallModal] = useState<{
-    isOpen: boolean;
-    videoMode: boolean;
-  } | null>(null);
+
 
   // Audio voice note recording
   const [isRecording, setIsRecording] = useState(false);
@@ -1109,7 +1105,6 @@ function RealConversationContent() {
       return;
     }
 
-    setShowOfflineCallModal(null);
     playSound?.('call');
     const roomId = `room_${[user.id, activePartner.id].sort().join('_')}_${Date.now()}`;
 
@@ -1156,46 +1151,6 @@ function RealConversationContent() {
     router.push(`/call?partnerId=${activePartner.id}&partnerName=${encodeURIComponent(activePartner.name)}&video=${videoMode}&roomId=${roomId}`);
   };
 
-  // Directly log and broadcast a missed call when partner is offline
-  const handleRecordMissedCallDirectly = async (videoMode: boolean) => {
-    if (!activePartner || !user?.id) return;
-    setShowOfflineCallModal(null);
-    playSound?.('click');
-
-    const missedText = videoMode ? "📹 Missed video call" : "📞 Missed voice call";
-
-    // 1. Optimistic local update in chat
-    const missedMsg: ChatMessage = {
-      id: `missed_${Date.now()}`,
-      sender_id: user.id,
-      sender_name: profile?.full_name || 'You',
-      sender_avatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
-      text: missedText,
-      created_at: new Date().toISOString(),
-      status: 'sent',
-    };
-
-    setConversationMap(prev => {
-      const current = prev[activePartner.id] || [];
-      const nextList = [...current, missedMsg];
-      const nextMap = { ...prev, [activePartner.id]: nextList };
-      saveConversation(nextMap);
-      return nextMap;
-    });
-
-    // 2. Persist to Supabase messages & calls tables, Realtime notification and Web Push
-    try {
-      await recordMissedCall({
-        callerId: user.id,
-        callerName: profile?.full_name || 'English Learner',
-        callerAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
-        receiverId: activePartner.id,
-        isVideo: videoMode,
-      });
-    } catch (err) {
-      console.warn('Error recording direct missed call:', err);
-    }
-  };
 
   // End Remote Call & Save Call Summary to Database
   const handleEndCall = async () => {
@@ -3359,70 +3314,6 @@ function RealConversationContent() {
         </div>
       )}
 
-      {/* Offline Partner Call Modal */}
-      {showOfflineCallModal?.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="relative w-full max-w-md rounded-3xl bg-[#111b21] border-2 border-amber-500/80 p-6 shadow-[0_0_50px_rgba(245,158,11,0.25)] text-center">
-            {/* Offline Icon */}
-            <div className="w-16 h-16 rounded-full border-2 border-amber-400 bg-amber-500/10 flex items-center justify-center mx-auto mb-4 text-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.3)] animate-pulse">
-              <WifiOff className="w-8 h-8" />
-            </div>
-
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-500/50 bg-amber-500/10 text-amber-300 text-xs font-bold uppercase tracking-wider mb-2">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-              Statut : Partenaire Hors Ligne (Offline)
-            </div>
-
-            <h3 className="text-lg font-bold text-white mb-2">
-              {activePartner?.name} n&apos;est pas connecté(e)
-            </h3>
-
-            <p className="text-xs sm:text-sm text-slate-300 mb-6 leading-relaxed">
-              Le statut offline indique que <strong className="text-amber-300">{activePartner?.name}</strong> est actuellement déconnecté(e). Il/elle ne pourra peut-être pas décrocher l&apos;appel en direct.
-            </p>
-
-            <div className="space-y-2.5">
-              <button
-                type="button"
-                onClick={() => handleStartRemoteCall(showOfflineCallModal.videoMode, true)}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-all active:scale-98 cursor-pointer"
-              >
-                <Phone className="w-4 h-4 fill-slate-950" />
-                <span>Lancer l&apos;appel quand même / Call Anyway</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleRecordMissedCallDirectly(showOfflineCallModal.videoMode)}
-                className="w-full py-2.5 px-4 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
-              >
-                <PhoneOff className="w-4 h-4 text-rose-400" />
-                <span>Laisser un avis d&apos;appel manqué / Leave Missed Call Alert</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowOfflineCallModal(null);
-                  inputRef.current?.focus();
-                }}
-                className="w-full py-2.5 px-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
-              >
-                <MessageCircle className="w-4 h-4 text-emerald-400" />
-                <span>Laisser un message / Send Message</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowOfflineCallModal(null)}
-                className="w-full py-2 text-xs text-slate-400 hover:text-white transition-colors cursor-pointer"
-              >
-                Annuler
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <InvitePartnerModal
         isOpen={inviteModalOpen}

@@ -108,7 +108,10 @@ export default function GlobalCallNotifier() {
       if (event.data?.type === 'eb_answer_call' && event.data.url) {
         stopRinging();
         setIncomingCall(null);
-        router.push(event.data.url);
+        const targetPath = event.data.url.startsWith('http') 
+          ? (new URL(event.data.url).pathname + new URL(event.data.url).search) 
+          : event.data.url;
+        window.location.href = targetPath;
       } else if (event.data?.type === 'eb_incoming_call_push' && event.data.callData) {
         handleTriggerIncomingCall(event.data.callData);
       } else if (event.data?.type === 'eb_call_declined_from_sw') {
@@ -450,7 +453,7 @@ export default function GlobalCallNotifier() {
           text: `${missedText} (${isFrRef.current ? 'Appuyez pour rappeler' : 'Tap to call back'})`,
         });
       }
-    }, 45000);
+    }, 70000);
   };
 
   useEffect(() => {
@@ -595,7 +598,7 @@ export default function GlobalCallNotifier() {
 
     const targetUrl = `/call?partnerId=${incomingCall.callerId}&partnerName=${encodeURIComponent(incomingCall.callerName)}&roomId=${incomingCall.roomId}&video=${incomingCall.isVideo}&autoAnswer=true`;
     setIncomingCall(null);
-    router.push(targetUrl);
+    window.location.href = targetUrl;
   };
 
   // Decline incoming call
