@@ -86,8 +86,9 @@ export default function LiveRoomPage() {
   const { isFr } = useTranslation();
   const supabase = createClient();
 
-  // Maximum 6 participants rule
-  const MAX_PARTICIPANTS = 6;
+  // Multi-seats participants capacity (multiple seats without 6 limit)
+  const DEFAULT_SEATS_COUNT = 12;
+  const [maxParticipants, setMaxParticipants] = useState(DEFAULT_SEATS_COUNT);
 
   const [seats, setSeats] = useState<LiveSeat[]>([]);
   const [topicIndex, setTopicIndex] = useState(0);
@@ -113,22 +114,25 @@ export default function LiveRoomPage() {
   const liveRecognitionRef = useRef<any>(null);
   const channelRef = useRef<any>(null);
 
-  // Initialize 6 seats and synchronize real presence from Supabase
+  // Initialize multiple seats and synchronize real presence from Supabase
   useEffect(() => {
-    const initialSeats: LiveSeat[] = [];
+    const buildSeatList = (count: number): LiveSeat[] => {
+      const list: LiveSeat[] = [];
+      for (let i = 1; i <= count; i++) {
+        list.push({
+          seatNumber: i,
+          user: null,
+          isHost: i === 1,
+          isMuted: false,
+          isVideoOn: true,
+          isSpeaking: false,
+          handRaised: false,
+        });
+      }
+      return list;
+    };
 
-    for (let i = 1; i <= MAX_PARTICIPANTS; i++) {
-      initialSeats.push({
-        seatNumber: i,
-        user: null,
-        isHost: i === 1,
-        isMuted: false,
-        isVideoOn: true,
-        isSpeaking: false,
-        handRaised: false,
-      });
-    }
-
+    const initialSeats: LiveSeat[] = buildSeatList(maxParticipants);
     setSeats(initialSeats);
 
     // Real Supabase Presence Channel for the Live Roundtable
@@ -155,11 +159,14 @@ export default function LiveRoomPage() {
         setSpectatorCount(Math.max(1, totalCount));
 
         // Reconstruct live seats purely from genuine connected participants
-        setSeats(() => {
-          const updated = initialSeats.map(s => ({ ...s }));
+        setSeats(prev => {
+          const maxPresSeat = seatedPresences.reduce((acc, p) => Math.max(acc, p.seatNumber || 1), 1);
+          const totalCountNeeded = Math.max(maxParticipants, prev.length, maxPresSeat);
+          const updated = buildSeatList(totalCountNeeded);
+
           for (const s of seatedPresences) {
             const idx = s.seatNumber - 1;
-            if (idx >= 0 && idx < MAX_PARTICIPANTS) {
+            if (idx >= 0 && idx < updated.length) {
               updated[idx] = {
                 seatNumber: s.seatNumber,
                 user: s.user,
@@ -221,9 +228,33 @@ export default function LiveRoomPage() {
 
   // Total seated participants count
   const occupiedSeatsCount = seats.filter(s => s.user !== null).length;
-  const isRoomFull = occupiedSeatsCount >= MAX_PARTICIPANTS;
+  const isRoomFull = occupiedSeatsCount >= maxParticipants;
 
-  // Join a seat (capped at 6)
+  // Add more seats dynamically to the round table
+  const handleAddMoreSeats = (countToAdd = 4) => {
+    playSound('click');
+    setMaxParticipants(prev => {
+      const nextCount = prev + countToAdd;
+      setSeats(currentSeats => {
+        const copy = [...currentSeats];
+        for (let i = currentSeats.length + 1; i <= nextCount; i++) {
+          copy.push({
+            seatNumber: i,
+            user: null,
+            isHost: false,
+            isMuted: false,
+            isVideoOn: true,
+            isSpeaking: false,
+            handRaised: false,
+          });
+        }
+        return copy;
+      });
+      return nextCount;
+    });
+  };
+
+  // Join a seat on the live floor
   const handleJoinSeat = (targetSeatNumber?: number) => {
     if (!user || !profile) {
       playSound('click');
@@ -233,7 +264,9 @@ export default function LiveRoomPage() {
 
     if (isRoomFull && mySeatNumber === null) {
       playSound('click');
-      alert(isFr ? "La salle a atteint son maximum de 6 personnes ! Vous êtes en mode écoute." : "Room is full (max 6 participants)! You are in listening mode.");
+      alert(isFr 
+        ? `Tous les ${maxParticipants} sièges sont actuellement occupés ! Vous pouvez ajouter des sièges supplémentaires ou écouter en spectateur.` 
+        : `All ${maxParticipants} seats are currently occupied! You can add more seats or listen as spectator.`);
       return;
     }
 
@@ -530,14 +563,14 @@ export default function LiveRoomPage() {
               <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
                 {isFr ? 'Live Direct — Table Ronde Internationale' : 'Live Direct — International Roundtable'}
               </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-rose-500/20 border border-rose-500/40 text-rose-600 dark:text-rose-300">
-                Max 6
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-emerald-500/20 border border-emerald-500/40 text-emerald-600 dark:text-emerald-300">
+                {isFr ? '🎙️ Multi-Sièges' : '🎙️ Multi-Seats'}
               </span>
             </div>
             <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
               {isFr 
-                ? 'Discussion vocale en direct limitée à 6 personnes maximum. Pratique de l\'anglais exclusive !'
-                : 'Direct live roundtable capped at 6 participants maximum. Strictly English immersion!'}
+                ? 'Discussion vocale et vidéo en direct multi-participants. Pratique de l\'anglais exclusive !'
+                : 'Direct live interactive multi-seat roundtable. Strictly English immersion!'}
             </p>
           </div>
         </div>
@@ -547,9 +580,18 @@ export default function LiveRoomPage() {
           <div className="flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-xs font-semibold text-slate-700 dark:text-slate-300">
             <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 dark:text-emerald-400" />
             <span>
-              <strong>{occupiedSeatsCount} / {MAX_PARTICIPANTS}</strong> <span className="hidden xs:inline">{isFr ? 'sièges' : 'seats'}</span>
+              <strong>{occupiedSeatsCount} / {maxParticipants}</strong> <span className="hidden xs:inline">{isFr ? 'sièges' : 'seats'}</span>
             </span>
           </div>
+
+          <button
+            type="button"
+            onClick={() => handleAddMoreSeats(4)}
+            className="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold bg-white/5 hover:bg-white/10 border border-white/10 text-slate-700 dark:text-slate-300 transition-colors flex items-center gap-1 cursor-pointer"
+            title={isFr ? "Ajouter 4 sièges supplémentaires" : "Add 4 more seats"}
+          >
+            <span>+4 {isFr ? 'sièges' : 'seats'}</span>
+          </button>
 
           <div className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs font-semibold text-purple-700 dark:text-purple-300">
             <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
@@ -578,7 +620,7 @@ export default function LiveRoomPage() {
               <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span>
                 {isRoomFull
-                  ? (isFr ? 'Complet (6/6)' : 'Full (6/6)')
+                  ? (isFr ? `Complet (${occupiedSeatsCount}/${maxParticipants})` : `Full (${occupiedSeatsCount}/${maxParticipants})`)
                   : (isFr ? '🎙️ Rejoindre' : '🎙️ Join Live')}
               </span>
             </button>
@@ -619,14 +661,14 @@ export default function LiveRoomPage() {
         </div>
       </div>
 
-      {/* Main Grid: 6 Seats Layout + Live Chat Sidebar */}
+      {/* Main Grid: Multi-Seats Stage Layout + Live Chat Sidebar */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* Left Column (8 cols): 6 Seats Video Grid */}
+        {/* Left Column (8 cols): Multi-Seats Video Grid */}
         <div className="lg:col-span-8 space-y-4">
           
-          {/* 6 Seats Responsive Grid (2 cols on mobile, 3 cols on tablet & desktop) */}
-          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3.5">
+          {/* Multi-Seats Responsive Grid (2 cols mobile, 3 cols tablet, 4 cols desktop) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 sm:gap-3.5">
             {seats.map((seat) => {
               const isMe = mySeatNumber === seat.seatNumber;
               const hasUser = seat.user !== null;
@@ -734,22 +776,23 @@ export default function LiveRoomPage() {
                   ) : (
                     /* Empty Seat */
                     <div className="w-full h-full flex flex-col items-center justify-center p-2 sm:p-4 text-center">
-                      <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-full border-2 border-dashed border-white/20 flex items-center justify-center text-slate-500 mb-1 sm:mb-2">
+                      <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-full border-2 border-dashed border-emerald-400/30 bg-emerald-500/5 flex items-center justify-center text-emerald-400 mb-1 sm:mb-2">
                         <Users className="w-4 h-4 sm:w-5 sm:h-5" />
                       </div>
-                      <span className="text-[10px] sm:text-xs font-bold text-slate-400">
+                      <span className="text-[10px] sm:text-xs font-bold text-slate-300">
                         {isFr ? `Siège ${seat.seatNumber} Libre` : `Seat ${seat.seatNumber} Open`}
                       </span>
-                      <p className="text-[9px] sm:text-[11px] text-slate-500 mt-0.5 hidden xs:block">
-                        {isFr ? 'Max 6 personnes' : 'Capped at 6'}
+                      <p className="text-[9px] sm:text-[10px] text-emerald-400/80 font-medium mt-0.5 hidden xs:block">
+                        {isFr ? 'Scène Ouverte' : 'Open Floor'}
                       </p>
                       
                       {!mySeatNumber && (
                         <button
                           onClick={() => handleJoinSeat(seat.seatNumber)}
-                          className="mt-1.5 sm:mt-3 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[10px] sm:text-xs font-bold transition-all hover:scale-105 active:scale-95"
+                          className="mt-1.5 sm:mt-2.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[10px] sm:text-xs font-bold transition-all hover:scale-105 active:scale-95 flex items-center gap-1 cursor-pointer"
                         >
-                          {isFr ? 'Prendre' : 'Take seat'}
+                          <span>+</span>
+                          <span>{isFr ? 'Prendre ce siège' : 'Take seat'}</span>
                         </button>
                       )}
                     </div>
@@ -813,29 +856,97 @@ export default function LiveRoomPage() {
                 </button>
               </>
             ) : (
-              <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-600 dark:text-slate-400">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-                  <span>
-                    {isFr 
-                      ? "Vous écoutez actuellement en mode spectateur." 
-                      : "You are currently listening as spectator."}
-                  </span>
+              <div className="w-full flex flex-col gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-600 dark:text-slate-400">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0" />
+                    <span>
+                      {isFr 
+                        ? "Mode spectateur actif — Choisissez un siège ci-dessous ou rejoignez la scène pour pratiquer !" 
+                        : "Spectator mode active — Pick any seat below or take the floor to speak live!"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleAddMoreSeats(4)}
+                      className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 transition-colors flex items-center gap-1 cursor-pointer"
+                      title={isFr ? "Ajouter 4 sièges supplémentaires" : "Add 4 more seats"}
+                    >
+                      <span>+4 {isFr ? 'sièges' : 'seats'}</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleJoinSeat()}
+                      disabled={isRoomFull}
+                      className={`px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow-lg ${
+                        isRoomFull
+                          ? 'bg-slate-100 dark:bg-white/10 text-slate-400 dark:text-slate-500 cursor-not-allowed'
+                          : 'bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 shadow-[0_0_20px_rgba(74,222,128,0.35)] hover:scale-105 active:scale-95'
+                      }`}
+                    >
+                      <Mic className="w-4 h-4" />
+                      <span>
+                        {isRoomFull
+                          ? (isFr ? `Salle Complète (${occupiedSeatsCount}/${maxParticipants})` : `Room Full (${occupiedSeatsCount}/${maxParticipants})`)
+                          : (isFr ? 'Prendre la parole (Rejoindre)' : 'Take the floor (Join)')}
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded-md bg-black/20 text-[10px]">
+                        {occupiedSeatsCount}/{maxParticipants}
+                      </span>
+                    </button>
+                  </div>
                 </div>
 
-                <button
-                  onClick={() => handleJoinSeat()}
-                  disabled={isRoomFull}
-                  className={`px-4 py-2 rounded-xl font-bold transition-all ${
-                    isRoomFull
-                      ? 'bg-slate-100 dark:bg-white/10 text-slate-400 dark:text-slate-500 cursor-not-allowed'
-                      : 'bg-emerald-500 dark:bg-emerald-400 text-slate-950 hover:bg-emerald-400 shadow-[0_0_15px_rgba(74,222,128,0.3)]'
-                  }`}
-                >
-                  {isRoomFull
-                    ? (isFr ? 'Salle Complète (6/6 participants)' : 'Room Full (6/6 participants)')
-                    : (isFr ? 'Prendre la parole (Rejoindre)' : 'Take the floor (Join)')}
-                </button>
+                {/* Multiple Take Seat Slots: Quick Seat Picker */}
+                <div className="pt-2.5 border-t border-slate-100 dark:border-white/5">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>{isFr ? "Choisir et prendre un siège sur la scène :" : "Take a seat on the floor:"}</span>
+                    </span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                      {occupiedSeatsCount} {isFr ? 'occupé(s)' : 'occupied'} • {maxParticipants - occupiedSeatsCount} {isFr ? 'libre(s)' : 'open'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none pb-1">
+                    {seats.map((s) => {
+                      const isOpen = s.user === null;
+                      return (
+                        <button
+                          key={s.seatNumber}
+                          type="button"
+                          onClick={() => isOpen && handleJoinSeat(s.seatNumber)}
+                          disabled={!isOpen}
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                            isOpen
+                              ? 'bg-emerald-500/10 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:scale-105 active:scale-95 cursor-pointer shadow-sm'
+                              : 'bg-slate-100 dark:bg-white/5 border border-transparent text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60'
+                          }`}
+                          title={
+                            isOpen 
+                              ? (isFr ? `Prendre le siège ${s.seatNumber}` : `Take seat ${s.seatNumber}`) 
+                              : (isFr ? `Siège ${s.seatNumber} occupé par ${s.user?.full_name}` : `Seat ${s.seatNumber} occupied by ${s.user?.full_name}`)
+                          }
+                        >
+                          <span className={`w-2 h-2 rounded-full ${isOpen ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+                          <span>{isFr ? `Siège ${s.seatNumber}` : `Seat ${s.seatNumber}`}</span>
+                          {isOpen ? (
+                            <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 uppercase tracking-tight">
+                              {isFr ? 'Prendre' : 'Take'}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 truncate max-w-[55px]">
+                              {s.user?.full_name?.split(' ')[0]}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             )}
           </div>
