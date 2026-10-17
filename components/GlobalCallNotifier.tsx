@@ -638,7 +638,7 @@ export default function GlobalCallNotifier() {
       {showPermissionPrompt && (
         <aside 
           aria-label="Notification Permission"
-          className="fixed bottom-20 sm:bottom-6 left-3 right-3 sm:left-auto sm:right-6 z-[9980] sm:max-w-md animate-fade-in safe-pb"
+          className="fixed bottom-20 sm:bottom-6 left-3 sm:left-6 sm:right-auto z-[9980] max-w-[calc(100vw-1.5rem)] sm:max-w-sm animate-fade-in safe-pb"
         >
           <div className="p-3.5 rounded-2xl bg-[#091124]/95 border border-emerald-400/50 shadow-[0_15px_40px_rgba(0,0,0,0.85)] backdrop-blur-xl text-white">
             <div className="flex items-center justify-between gap-3 mb-2.5">
