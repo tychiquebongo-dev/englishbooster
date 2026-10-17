@@ -858,7 +858,7 @@ function CallContent() {
                 <>
                   <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
                   <span className="text-amber-300 font-medium">
-                    {isFr ? 'Sonnerie chez le partenaire...' : 'Ringing partner...'}
+                    {isFr ? 'Sonnerie chez le partenaire (signal & alerte Push envoyés)...' : 'Ringing partner (signal & Push alert sent)...'}
                   </span>
                 </>
               ) : (

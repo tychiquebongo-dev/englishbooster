@@ -33,6 +33,30 @@ export async function broadcastIncomingCall(payload: IncomingCallPayload) {
   const channelName = `user-notifications-${payload.receiverId}`;
   const channel = supabase.channel(channelName);
 
+  // 1. Immediately send native background Web Push notification (wakes phone/device even if offline or app closed)
+  try {
+    fetch('/api/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({
+        receiverId: payload.receiverId,
+        type: 'call',
+        title: payload.isVideo
+          ? `📹 Appel Vidéo entrant : ${payload.callerName}`
+          : `📞 Appel Vocal entrant : ${payload.callerName}`,
+        body: `${payload.callerName} vous appelle en direct sur English Booster. Appuyez pour décrocher.`,
+        icon: payload.callerAvatar || '/assets/images/logo.svg',
+        url: `/call?partnerId=${payload.callerId}&partnerName=${encodeURIComponent(payload.callerName)}&roomId=${payload.roomId}&video=${payload.isVideo}&autoAnswer=true`,
+        callerId: payload.callerId,
+        callerName: payload.callerName,
+        callerAvatar: payload.callerAvatar,
+        roomId: payload.roomId,
+        isVideo: payload.isVideo,
+      }),
+    }).catch(() => {});
+  } catch {}
+
   return new Promise<void>((resolve) => {
     channel.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
@@ -51,29 +75,6 @@ export async function broadcastIncomingCall(payload: IncomingCallPayload) {
         });
       }
     });
-
-    // Also send native background Web Push notification (for when user is outside application / phone locked)
-    try {
-      fetch('/api/push/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          receiverId: payload.receiverId,
-          type: 'call',
-          title: payload.isVideo
-            ? `📹 Appel Vidéo entrant : ${payload.callerName}`
-            : `📞 Appel Vocal entrant : ${payload.callerName}`,
-          body: `${payload.callerName} vous appelle en direct sur English Booster. Appuyez pour décrocher.`,
-          icon: payload.callerAvatar || '/assets/images/logo.svg',
-          url: `/call?partnerId=${payload.callerId}&partnerName=${encodeURIComponent(payload.callerName)}&roomId=${payload.roomId}&video=${payload.isVideo}&autoAnswer=true`,
-          callerId: payload.callerId,
-          callerName: payload.callerName,
-          callerAvatar: payload.callerAvatar,
-          roomId: payload.roomId,
-          isVideo: payload.isVideo,
-        }),
-      }).catch(() => {});
-    } catch {}
 
     // Also persist call invitation into calls table
     try {
@@ -204,6 +205,7 @@ export async function broadcastNewMessage(payload: NewMessagePayload) {
       fetch('/api/push/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
         body: JSON.stringify({
           receiverId: payload.receiverId,
           type: 'message',

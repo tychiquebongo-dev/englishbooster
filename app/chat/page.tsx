@@ -954,23 +954,33 @@ function RealConversationContent() {
     setIncomingCallData(null);
   };
 
-  // Start Outgoing Remote Call by routing directly to the dedicated Call Room
-  const handleStartRemoteCall = (videoMode: boolean, bypassOfflineWarning = false) => {
+  // Start Outgoing Remote Call by signaling partner immediately (even if offline) and entering call room
+  const handleStartRemoteCall = (videoMode: boolean) => {
     if (!activePartner || !user?.id) {
       if (!user?.id) alert("Please sign in to make calls.");
-      return;
-    }
-
-    // If partner is not online, show signal outline modal warning
-    if (!activePartner.is_online && !bypassOfflineWarning) {
-      playSound?.('click');
-      setShowOfflineCallModal({ isOpen: true, videoMode });
       return;
     }
 
     setShowOfflineCallModal(null);
     playSound?.('call');
     const roomId = `room_${[user.id, activePartner.id].sort().join('_')}_${Date.now()}`;
+
+    // Immediately broadcast incoming call & send high-priority Web Push to wake partner's device even if offline / app closed
+    try {
+      broadcastIncomingCall({
+        callerId: user.id,
+        callerName: profile?.full_name || 'English Learner',
+        callerAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
+        callerFlag: profile?.flag || '🌐',
+        callerLevel: profile?.current_level || 'B2',
+        receiverId: activePartner.id,
+        roomId: roomId,
+        isVideo: videoMode,
+      });
+    } catch (err) {
+      console.warn('Error broadcasting incoming call:', err);
+    }
+
     router.push(`/call?partnerId=${activePartner.id}&partnerName=${encodeURIComponent(activePartner.name)}&video=${videoMode}&roomId=${roomId}`);
   };
 
@@ -1187,6 +1197,17 @@ function RealConversationContent() {
     setGrammarSuggestion(null);
     setShowEmojiPicker(false);
 
+    // Immediately signal partner via Realtime broadcast and background Web Push (even if offline / app closed)
+    try {
+      broadcastNewMessage({
+        senderId: user.id,
+        senderName: profile?.full_name || 'English Learner',
+        senderAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
+        receiverId: targetPartnerId,
+        text: textToSend,
+      });
+    } catch {}
+
     if (chatChannelRef.current) {
       chatChannelRef.current.send({
         type: 'broadcast',
@@ -1369,6 +1390,18 @@ function RealConversationContent() {
             saveConversation(nextMap);
             return nextMap;
           });
+
+          // Immediately signal partner via background Web Push & Realtime notification (even if offline / app closed)
+          try {
+            broadcastNewMessage({
+              senderId: user.id,
+              senderName: profile?.full_name || 'English Learner',
+              senderAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
+              receiverId: targetPartnerId,
+              text: `🎙️ Voice Note (${recordedDuration}s)`,
+              audioUrl: base64Audio,
+            });
+          } catch {}
 
           // Immediate broadcast to partner via chat channel
           if (chatChannelRef.current) {
