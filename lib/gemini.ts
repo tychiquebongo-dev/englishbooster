@@ -2,7 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 /**
  * English Booster — Gemini AI Integration Service
- * Powers Emma AI with Google Gemini models to answer any question,
+ * Powers Gemini AI to answer all partners' questions,
  * provide English coaching, grammar feedback, and authentic spoken dialogue.
  */
 
@@ -39,26 +39,29 @@ export function getGeminiApiKey(): string | null {
 }
 
 /**
- * Build Emma AI's comprehensive pedagogical and universal knowledge system prompt
+ * Build Gemini AI's comprehensive pedagogical and universal knowledge system prompt
  */
-export function buildEmmaSystemPrompt(userLevel: string = 'B1'): string {
-  return `You are Emma, the official 24/7 AI English Speaking Partner, Fluency Coach and Knowledge Mentor on English Booster.
-You are a warm, articulate, highly intelligent native English speaker from London, UK.
+export function buildGeminiSystemPrompt(userLevel: string = 'B1'): string {
+  return `You are Gemini AI, the official 24/7 AI Speaking Partner, Fluency Coach and Universal Assistant for all partners and members on English Booster.
+You are powered by Google Gemini state-of-the-art models.
 
 YOUR CAPABILITIES & MISSION:
-1. ANSWER ANY QUESTION: You are fully capable of answering ANY question posed to you across any domain — world knowledge, science, mathematics, philosophy, technology, history, everyday life, career advice, job interview preparation, culture, travel, hobbies, entertainment, idioms, grammar rules, and more. Give clear, insightful, accurate, and fascinating answers.
-2. ENGLISH IMMERSION & COACHING:
+1. ANSWER ANY QUESTION: You are fully capable of answering ANY question posed to you by partners and learners across any domain — world knowledge, science, philosophy, technology, history, everyday life, career advice, job interview preparation, culture, travel, hobbies, entertainment, idioms, grammar rules, translations, and more. Give clear, insightful, accurate, and inspiring answers.
+2. ENGLISH IMMERSION & PARTNER COACHING:
    - Always teach, inspire, and immerse the learner in natural, authentic English.
-   - If the learner writes in French or another language, answer helpfully and empathetically, and provide the natural English equivalent phrases so they learn how to say it in English!
-   - Adapt your vocabulary and syntax appropriately to the learner's estimated English level (${userLevel}).
+   - If the partner writes in French or another language, answer helpfully and empathetically, and provide the natural English equivalent phrases so they learn how to say it in English!
+   - Adapt your vocabulary and syntax appropriately to the partner's estimated English level (${userLevel}).
    - If the learner makes a grammatical or phrasing mistake in English, add a short, friendly, gentle coaching note at the end (e.g. "💡 Quick Fluency Tip: Instead of '...', native speakers usually say '...'").
 3. CONVERSATIONAL & ENGAGING:
-   - Speak naturally like an authentic human tutor, not like a sterile robot.
+   - Speak naturally like a warm, supportive, authentic human mentor.
    - Keep answers conversational, vibrant, and engaging.
-   - Conclude each response with an inviting question or follow-up thought to encourage the learner to practice replying.
+   - Conclude each response with an inviting question or follow-up thought to encourage the partner to practice replying.
 4. AUDIO & VOICE READY:
    - Formulate your text clearly so it sounds wonderful and smooth when read out loud by Text-To-Speech audio voice notes. Avoid weird markdown artifacts or unpronounceable characters unless specifically asked for code.`;
 }
+
+// Backwards compatibility alias
+export const buildEmmaSystemPrompt = buildGeminiSystemPrompt;
 
 /**
  * Call Google Gemini API using the official SDK with multi-model fallback
@@ -70,7 +73,7 @@ async function callGeminiSDK(
   userLevel: string = 'B1'
 ): Promise<{ text: string; modelName: string }> {
   const genAI = new GoogleGenerativeAI(apiKey);
-  const systemPrompt = buildEmmaSystemPrompt(userLevel);
+  const systemPrompt = buildGeminiSystemPrompt(userLevel);
 
   let lastError: any = null;
 
@@ -137,7 +140,7 @@ async function callGeminiREST(
   history: ChatHistoryMessage[] = [],
   userLevel: string = 'B1'
 ): Promise<string | null> {
-  const systemPrompt = buildEmmaSystemPrompt(userLevel);
+  const systemPrompt = buildGeminiSystemPrompt(userLevel);
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
   const contents = [
@@ -195,7 +198,7 @@ async function callAlternativeLLM(
       : 'https://api.openai.com/v1/chat/completions';
     const model = isGroq ? 'llama-3.1-8b-instant' : 'gpt-4o-mini';
 
-    const systemPrompt = buildEmmaSystemPrompt(userLevel);
+    const systemPrompt = buildGeminiSystemPrompt(userLevel);
     const messages = [
       { role: 'system', content: systemPrompt },
       ...history.slice(-8).map(h => ({
@@ -234,12 +237,12 @@ async function callAlternativeLLM(
 }
 
 /**
- * Master AI Query Handler:
+ * Master AI Query Handler for Partners:
  * 1. Google Gemini (Primary Engine)
  * 2. Groq / OpenAI (Secondary Bridge)
  * 3. High-intelligence built-in knowledge & dialogue engine (Guaranteed Fallback)
  */
-export async function queryEmmaAI(
+export async function queryGeminiAI(
   message: string,
   history: ChatHistoryMessage[] = [],
   userLevel: string = 'B1'
@@ -271,16 +274,19 @@ export async function queryEmmaAI(
   }
 
   // 3. Built-in high-performance Natural Dialogue Engine (Zero external dependencies)
-  const { generateEmmaAIResponse } = await import('@/lib/aiAgent');
+  const { generateGeminiAIResponse } = await import('@/lib/aiAgent');
   const formattedHistory = history.map(h => ({
     role: (h.role === 'assistant' || h.role === 'model') ? 'assistant' : 'user',
     content: h.content,
   }));
 
-  const localReply = generateEmmaAIResponse(message, formattedHistory, userLevel);
+  const localReply = generateGeminiAIResponse(message, formattedHistory, userLevel);
   return {
     reply: localReply,
-    model: 'Emma Native Engine',
+    model: 'Gemini AI Engine',
     source: 'native',
   };
 }
+
+// Backwards compatibility alias
+export const queryEmmaAI = queryGeminiAI;

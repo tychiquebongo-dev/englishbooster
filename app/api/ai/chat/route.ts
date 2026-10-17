@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { queryEmmaAI, getGeminiApiKey } from '@/lib/gemini';
+import { queryGeminiAI, getGeminiApiKey } from '@/lib/gemini';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -71,8 +71,8 @@ export async function POST(req: NextRequest) {
       content: h.content || h.text || '',
     }));
 
-    // Query Emma AI (Google Gemini Primary Engine -> Fallbacks)
-    const aiResult = await queryEmmaAI(message, formattedHistory, userLevel);
+    // Query Gemini AI (Google Gemini Primary Engine -> Fallbacks)
+    const aiResult = await queryGeminiAI(message, formattedHistory, userLevel);
     const reply = aiResult.reply;
 
     // Generate Audio Voice Note if requested (message vocal)
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
       reply,
       audioUrl,
       duration,
-      agent: 'Emma AI',
+      agent: 'Gemini AI',
       model: aiResult.model,
       source: aiResult.source,
       hasGeminiKey: !!getGeminiApiKey(),

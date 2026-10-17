@@ -59,7 +59,12 @@ import {
   stopBrowserBarNotification, 
   showDesktopNotification 
 } from '@/lib/browserNotifications';
-import { EMMA_AI_PARTNER, generateEmmaAIResponse, AI_TOPIC_STARTERS, synthesizeEmmaVoiceNote } from '@/lib/aiAgent';
+import { 
+  GEMINI_AI_PARTNER, 
+  generateGeminiAIResponse, 
+  AI_TOPIC_STARTERS, 
+  synthesizeGeminiVoiceNote 
+} from '@/lib/aiAgent';
 import type { Database } from '@/lib/database.types';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -456,22 +461,22 @@ function RealConversationContent() {
             };
           });
 
-          // Build real members list and pin Emma AI Coach permanently at index 0
-          const emmaPartner: RealPartner = {
-            id: EMMA_AI_PARTNER.id,
-            name: EMMA_AI_PARTNER.name,
-            country: EMMA_AI_PARTNER.country,
-            flag: EMMA_AI_PARTNER.flag,
-            avatar: EMMA_AI_PARTNER.avatar,
-            level: EMMA_AI_PARTNER.level,
-            specialty: EMMA_AI_PARTNER.specialty,
+          // Build real members list and pin Gemini AI Partner permanently at index 0
+          const geminiPartner: RealPartner = {
+            id: GEMINI_AI_PARTNER.id,
+            name: GEMINI_AI_PARTNER.name,
+            country: GEMINI_AI_PARTNER.country,
+            flag: GEMINI_AI_PARTNER.flag,
+            avatar: GEMINI_AI_PARTNER.avatar,
+            level: GEMINI_AI_PARTNER.level,
+            specialty: GEMINI_AI_PARTNER.specialty,
             is_online: true,
             updated_at: new Date().toISOString(),
-            bio: EMMA_AI_PARTNER.bio,
+            bio: GEMINI_AI_PARTNER.bio,
             is_ai: true,
           };
 
-          const fullList: RealPartner[] = [emmaPartner, ...realList];
+          const fullList: RealPartner[] = [geminiPartner, ...realList];
           setPartners(fullList);
 
           // Mark current user online in database immediately
@@ -483,7 +488,7 @@ function RealConversationContent() {
               .then(() => {});
           }
 
-          // Select matching partner if query param passed, otherwise default to Emma AI Coach
+          // Select matching partner if query param passed, otherwise default to Gemini AI Partner
           if (fullList.length > 0) {
             if (partnerIdParam && fullList.some(r => r.id === partnerIdParam)) {
               setActivePartnerId(partnerIdParam);
@@ -503,27 +508,27 @@ function RealConversationContent() {
               }
             }
           } else {
-            setActivePartnerId(emmaPartner.id);
+            setActivePartnerId(geminiPartner.id);
           }
         }
       } catch (err) {
         console.error('Error loading real profiles:', err);
-        // Fallback: Ensure Emma AI is always available
-        const emmaPartner: RealPartner = {
-          id: EMMA_AI_PARTNER.id,
-          name: EMMA_AI_PARTNER.name,
-          country: EMMA_AI_PARTNER.country,
-          flag: EMMA_AI_PARTNER.flag,
-          avatar: EMMA_AI_PARTNER.avatar,
-          level: EMMA_AI_PARTNER.level,
-          specialty: EMMA_AI_PARTNER.specialty,
+        // Fallback: Ensure Gemini AI is always available
+        const geminiPartner: RealPartner = {
+          id: GEMINI_AI_PARTNER.id,
+          name: GEMINI_AI_PARTNER.name,
+          country: GEMINI_AI_PARTNER.country,
+          flag: GEMINI_AI_PARTNER.flag,
+          avatar: GEMINI_AI_PARTNER.avatar,
+          level: GEMINI_AI_PARTNER.level,
+          specialty: GEMINI_AI_PARTNER.specialty,
           is_online: true,
           updated_at: new Date().toISOString(),
-          bio: EMMA_AI_PARTNER.bio,
+          bio: GEMINI_AI_PARTNER.bio,
           is_ai: true,
         };
-        setPartners([emmaPartner]);
-        setActivePartnerId(emmaPartner.id);
+        setPartners([geminiPartner]);
+        setActivePartnerId(geminiPartner.id);
       } finally {
         if (isMounted) setLoadingPartners(false);
       }
@@ -681,18 +686,18 @@ function RealConversationContent() {
   useEffect(() => {
     if (!user?.id || !activePartner?.id) return;
 
-    // For Emma AI Coach: Initialize opening greeting if empty, without requiring DB table lookup
+    // For Gemini AI Partner: Initialize opening greeting if empty, without requiring DB table lookup
     if (activePartner.id === 'eb-ai-coach' || activePartner.is_ai) {
       setConversationMap(prev => {
         if (!prev['eb-ai-coach'] || prev['eb-ai-coach'].length === 0) {
           const welcomeMsg: ChatMessage = {
-            id: 'emma_init_welcome',
+            id: 'gemini_init_welcome',
             sender_id: 'eb-ai-coach',
-            sender_name: 'Emma AI • English Coach',
-            sender_avatar: EMMA_AI_PARTNER.avatar,
+            sender_name: 'Gemini AI • Coach Partenaires',
+            sender_avatar: GEMINI_AI_PARTNER.avatar,
             text: isFr
-              ? "Hello! 👋 Je suis Emma, votre coach & partenaire d'anglais IA disponible 24h/24. De quoi aimeriez-vous parler aujourd'hui ? Choisissez un sujet ci-dessous ou écrivez-moi en anglais !"
-              : "Hello there! 👋 I am Emma, your 24/7 AI English speaking partner & coach. What would you like to practice today? Choose a conversation prompt below or just say hi!",
+              ? "Hello! 👋 Je suis Gemini AI, votre partenaire & assistant IA disponible 24h/24. Posez-moi toutes vos questions (culture, vie quotidienne, grammaire, préparation d'entretiens) ou choisissez un sujet ci-dessous pour pratiquer en direct !"
+              : "Hello there! 👋 I am Gemini AI, your 24/7 intelligent English speaking partner & coach. Ask me ANY question or choose a conversation prompt below to practice speaking and writing!",
             created_at: new Date().toISOString(),
             status: 'read',
           };
@@ -1386,7 +1391,7 @@ function RealConversationContent() {
     setGrammarSuggestion(null);
     setShowEmojiPicker(false);
 
-    // If chatting with Emma AI Coach, generate natural conversational reply with voice message
+    // If chatting with Gemini AI Partner, generate natural conversational reply with voice message
     if (activePartner.id === 'eb-ai-coach' || activePartner.is_ai) {
       setIsAiTyping(true);
       (async () => {
@@ -1417,7 +1422,7 @@ function RealConversationContent() {
           }
 
           if (!aiReplyText) {
-            aiReplyText = generateEmmaAIResponse(
+            aiReplyText = generateGeminiAIResponse(
               textToSend, 
               updatedWithUser.slice(-8).map(m => ({
                 role: m.sender_id === 'eb-ai-coach' ? 'assistant' : 'user',
@@ -1428,18 +1433,18 @@ function RealConversationContent() {
           }
 
           if (aiVoiceNotesEnabled && !aiAudioUrl) {
-            aiAudioUrl = await synthesizeEmmaVoiceNote(aiReplyText);
+            aiAudioUrl = await synthesizeGeminiVoiceNote(aiReplyText);
           }
 
           // Natural human-like conversational typing delay
           const delay = Math.min(1400, Math.max(500, aiReplyText.length * 8));
           await new Promise(r => setTimeout(r, delay));
 
-          const emmaMessage: ChatMessage = {
-            id: `emma_${Date.now()}`,
+          const geminiMessage: ChatMessage = {
+            id: `gemini_${Date.now()}`,
             sender_id: 'eb-ai-coach',
-            sender_name: 'Emma AI • English Coach',
-            sender_avatar: EMMA_AI_PARTNER.avatar,
+            sender_name: 'Gemini AI • Coach Partenaires',
+            sender_avatar: GEMINI_AI_PARTNER.avatar,
             text: aiReplyText,
             audio_url: aiAudioUrl || undefined,
             created_at: new Date().toISOString(),
@@ -1448,7 +1453,7 @@ function RealConversationContent() {
 
           setConversationMap(prev => {
             const current = prev['eb-ai-coach'] || [];
-            const updated = [...current, emmaMessage];
+            const updated = [...current, geminiMessage];
             const m = { ...prev, ['eb-ai-coach']: updated };
             saveConversation(m);
             return m;
@@ -1685,14 +1690,14 @@ function RealConversationContent() {
             return nextMap;
           });
 
-          // If sending voice note to Emma AI, trigger Gemini AI written + spoken audio reply!
+          // If sending voice note to Gemini AI, trigger Gemini AI written + spoken audio reply!
           if (targetPartnerId === 'eb-ai-coach' || activePartner?.is_ai) {
             setIsAiTyping(true);
             (async () => {
               try {
                 const userSpokenWords = voiceNoteTranscriptRef.current.trim();
                 const aiQuery = userSpokenWords 
-                  ? `[Spoken voice note from user]: "${userSpokenWords}". Please respond as Emma AI, directly answering any questions, coaching their English pronunciation/syntax, and asking a conversational follow-up question.`
+                  ? `[Spoken voice note from user]: "${userSpokenWords}". Please respond as Gemini AI, directly answering any questions, coaching their English pronunciation/syntax, and asking a conversational follow-up question.`
                   : `The user sent you a spoken voice note to practice conversational English. Please respond with a warm, encouraging spoken voice coaching message, answer any questions, and ask a great follow-up question!`;
 
                 let aiReplyText = '';
@@ -1728,16 +1733,16 @@ function RealConversationContent() {
                 }
 
                 if (!aiAudioUrl) {
-                  aiAudioUrl = await synthesizeEmmaVoiceNote(aiReplyText);
+                  aiAudioUrl = await synthesizeGeminiVoiceNote(aiReplyText);
                 }
 
                 await new Promise(r => setTimeout(r, 1000));
 
-                const emmaVoiceMsg: ChatMessage = {
-                  id: `emma_voice_${Date.now()}`,
+                const geminiVoiceMsg: ChatMessage = {
+                  id: `gemini_voice_${Date.now()}`,
                   sender_id: 'eb-ai-coach',
-                  sender_name: 'Emma AI • English Coach',
-                  sender_avatar: EMMA_AI_PARTNER.avatar,
+                  sender_name: 'Gemini AI • Coach Partenaires',
+                  sender_avatar: GEMINI_AI_PARTNER.avatar,
                   text: aiReplyText,
                   audio_url: aiAudioUrl || undefined,
                   created_at: new Date().toISOString(),
@@ -1746,7 +1751,7 @@ function RealConversationContent() {
 
                 setConversationMap(prev => {
                   const current = prev['eb-ai-coach'] || [];
-                  const updated = [...current, emmaVoiceMsg];
+                  const updated = [...current, geminiVoiceMsg];
                   const m = { ...prev, ['eb-ai-coach']: updated };
                   saveConversation(m);
                   return m;
@@ -2796,7 +2801,7 @@ function RealConversationContent() {
 
                 {/* WhatsApp Action Icons (Video, Audio, Options) */}
                 <div className="flex items-center gap-1 sm:gap-2 text-[#aebac1] shrink-0">
-                  {/* AI Voice Toggle when chatting with Emma */}
+                  {/* AI Voice Toggle when chatting with Gemini AI */}
                   {activePartner.is_ai && (
                     <button
                       type="button"
@@ -3186,14 +3191,14 @@ function RealConversationContent() {
                 {isAiTyping && (
                   <div className="flex items-end gap-2 justify-start animate-fade-in my-2">
                     <img
-                      src={EMMA_AI_PARTNER.avatar}
-                      alt="Emma AI"
+                      src={GEMINI_AI_PARTNER.avatar}
+                      alt="Gemini AI"
                       className="w-7 h-7 rounded-full object-cover ring-2 ring-violet-500/80 mb-1"
                     />
                     <div className="bg-[#202c33] border border-violet-500/30 px-3.5 py-2 rounded-2xl rounded-tl-none text-white text-xs flex items-center gap-2 shadow-lg">
                       <span className="text-violet-300 font-bold flex items-center gap-1.5">
                         <Sparkles className="w-3.5 h-3.5 text-violet-400 animate-spin" />
-                        <span>Emma AI writes</span>
+                        <span>{isFr ? 'Gemini AI formule sa réponse...' : 'Gemini AI is writing...'}</span>
                       </span>
                       <span className="flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce [animation-delay:-0.3s]" />

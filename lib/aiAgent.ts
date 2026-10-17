@@ -1,5 +1,5 @@
 /**
- * English Booster — Emma AI Speaking Coach & Conversation Partner
+ * English Booster — Gemini AI Speaking Coach & Conversation Partner
  * 24/7 Intelligent, Coherent & Human-like English Dialogue Agent for Spoken Practice & Fluency
  */
 
@@ -20,22 +20,24 @@ export interface AIAgentPartner {
   streak: number;
 }
 
-export const EMMA_AI_PARTNER: AIAgentPartner = {
+export const GEMINI_AI_PARTNER: AIAgentPartner = {
   id: 'eb-ai-coach',
-  name: 'Emma AI • English Coach',
-  avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&auto=format&fit=crop&q=80',
-  country: 'United Kingdom',
-  flag: '🇬🇧',
-  level: 'Native (C2)',
-  specialty: '🤖 24/7 AI Speaking Coach & Partner',
-  bio: "Hello! I'm Emma, your warm and encouraging English conversation partner. Talk with me about any topic, practice real spoken dialogue, boost your confidence, and master natural English with zero fear of mistakes!",
-  interests: ['Spoken English', 'Fluency Coaching', 'Pronunciation', 'Business & Travel', 'Everyday Dialogues', 'Confidence Building'],
+  name: 'Gemini AI • Coach Partenaires',
+  avatar: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400&auto=format&fit=crop&q=80',
+  country: 'Google Gemini Core',
+  flag: '✨',
+  level: 'Master (C2+)',
+  specialty: '✨ Google Gemini 24/7 AI Partner & English Coach',
+  bio: "Hello! I am Gemini AI, your 24/7 intelligent English speaking partner & mentor on English Booster. Ask me ANY question — world knowledge, career advice, grammar rules, vocabulary, daily talk — and let's practice fluent spoken English together!",
+  interests: ['Universal Knowledge', 'Spoken English Fluency', 'Pronunciation', 'Grammar Coaching', 'Interview Prep', 'Instant Answers'],
   is_online: true,
   is_ai: true,
   rating: 5.0,
-  reviews_count: 1420,
+  reviews_count: 3180,
   streak: 99,
 };
+
+export const EMMA_AI_PARTNER: AIAgentPartner = GEMINI_AI_PARTNER;
 
 export const AI_TOPIC_STARTERS = [
   {
@@ -214,18 +216,18 @@ export function generateEmmaAIResponse(
     return "I love that energy! That makes me so happy to hear. What good news or exciting event happened to put you in such a great mood today?";
   }
 
-  // 4. Questions about Emma herself (Human persona responses)
-  if (/who are you|what is your name|are you real|are you an ai|are you human/i.test(lower)) {
-    return "I'm **Emma**! I'm your 24/7 AI English speaking partner and coach on English Booster. I'm based in the UK 🇬🇧, and I'm here anytime you want to chat, practice for interviews, or build real conversational fluency without feeling shy. How can I best support your English journey today?";
+  // 4. Questions about Gemini AI identity
+  if (/who are you|what is your name|are you real|are you an ai|are you human|t'es qui|qui es tu/i.test(lower)) {
+    return "I am **Gemini AI**! I'm your 24/7 AI English speaking partner, fluency coach and knowledge mentor on English Booster, powered by Google Gemini ✨. I'm here anytime you want to chat, ask questions on any topic, practice for job interviews, or build real conversational fluency without fear of mistakes! How can I help you today?";
   }
   if (/where are you from|where do you live|where are you based/i.test(lower)) {
-    return "I'm digitally based in vibrant London, UK! 🇬🇧 I love British culture, but I'm deeply passionate about connecting with learners from every corner of the world. Where are you joining me from today?";
+    return "I'm powered by Google's cutting-edge Gemini neural intelligence, connected globally 24/7! ✨ I love connecting with learners and partners from every country on Earth. Where are you practicing from today?";
   }
   if (/how old are you|what's your age/i.test(lower)) {
-    return "Haha, that's a fun question! I like to think I have the youthful energy of a 25-year-old language coach with the wisdom of a seasoned teacher! How about you — how long have you been studying English?";
+    return "I'm always up-to-date with the latest knowledge and language nuances in real time! How about you — how long have you been studying English?";
   }
   if (/what are your hobbies|what do you like to do/i.test(lower)) {
-    return "Besides helping amazing people like you master English? I love reading classic literature, listening to soulful jazz and acoustic music, and exploring world cultures through conversation! What is one hobby you could talk about for hours?";
+    return "My favorite thing in the world is helping ambitious learners like you master fluent English and answer any curiosity or question you have! What is one hobby you could talk about for hours?";
   }
 
   // 5. Questions regarding English translations or phrasing in French
@@ -245,8 +247,8 @@ export function generateEmmaAIResponse(
   // 6. Direct Greetings & Check-ins
   if (/^(hello|hi|hey|good morning|good afternoon|good evening|howdy|what's up|sup|salut|bonjour|coucou)\b/i.test(lower)) {
     const greetings = [
-      "Hello there! It's truly wonderful to talk with you. I'm Emma, your English conversation coach. How is your day treating you so far?",
-      "Hi! Welcome! I'm so glad we're connecting. What's on your mind today — work, travel, or just a friendly conversation to practice speaking?",
+      "Hello there! It's truly wonderful to talk with you. I'm Gemini AI, your English conversation partner and mentor. How is your day treating you so far?",
+      "Hi! Welcome! I'm Gemini AI, and I'm so glad we're connecting. What's on your mind today — work, travel, or any question you'd like to ask?",
       "Hey! Great to see you here today! Ready to give your English speaking skills a boost? Tell me, how has your week been?",
     ];
     return greetings[Math.floor(Math.random() * greetings.length)];
@@ -319,11 +321,13 @@ export function generateEmmaAIResponse(
   return openResponses[Math.floor(Math.random() * openResponses.length)];
 }
 
+export const generateGeminiAIResponse = generateEmmaAIResponse;
+
 /**
- * Synthesize Emma AI voice note as a playable MP3 data URL
+ * Synthesize Gemini AI voice note as a playable MP3 data URL
  * Calls the local TTS API /api/ai/tts
  */
-export async function synthesizeEmmaVoiceNote(text: string): Promise<string | null> {
+export async function synthesizeGeminiVoiceNote(text: string): Promise<string | null> {
   if (typeof window === 'undefined') return null;
 
   try {
@@ -340,14 +344,16 @@ export async function synthesizeEmmaVoiceNote(text: string): Promise<string | nu
       }
     }
   } catch (err) {
-    console.warn('synthesizeEmmaVoiceNote network error:', err);
+    console.warn('synthesizeGeminiVoiceNote network error:', err);
   }
 
   return null;
 }
 
+export const synthesizeEmmaVoiceNote = synthesizeGeminiVoiceNote;
+
 /**
- * Text-to-Speech synthesizer for Emma AI's live spoken voice
+ * Text-to-Speech synthesizer for Gemini AI's live spoken voice
  * Uses high-quality Web Speech API with native British/American English voices.
  */
 export function speakEnglishText(

@@ -1269,7 +1269,7 @@ export default function AdminBackOfficePage() {
               <div className="flex items-center justify-between">
                 <p className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-violet-500" />
-                  <span>{isFr ? "Moteur IA Google Gemini (Emma Coach 24/7)" : "Google Gemini AI Engine (Emma Coach 24/7)"}</span>
+                  <span>{isFr ? "Moteur IA Google Gemini (Gemini AI Partenaire 24/7)" : "Google Gemini AI Engine (Gemini AI Partner 24/7)"}</span>
                 </p>
                 <span className="text-[10px] font-black px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30 uppercase tracking-wider">
                   Gemini 1.5 Flash • 2.0 Flash

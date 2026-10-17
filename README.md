@@ -21,8 +21,8 @@ English Booster is an EdTech web platform designed to solve a common global chal
    - AI Compatibility Score calculation (e.g. 98% Match) based on learning goals, availability, and shared passions.
    - Granular filtering by country, CEFR level, native language, interests, and real-time online status.
 
-3. **Live Chat & Google Gemini AI Universal Coach (Emma AI 24/7)**
-   - 24/7 AI Speaking Coach powered by **Google Gemini** (`gemini-1.5-flash`, `gemini-2.0-flash`).
+3. **Live Chat & Google Gemini AI Universal Partner & Coach (Gemini AI 24/7)**
+   - 24/7 AI Speaking Coach & Partner powered by **Google Gemini** (`gemini-1.5-flash`, `gemini-2.0-flash`).
    - Answers **ANY question** across any domain (culture, science, tech, career, grammar rules, job interviews).
    - Multi-format support: **Written dialogue and real spoken audio voice notes** with interactive waveforms.
    - Built-in **Speech-to-Text Voice Dictation** allowing users to dictate questions directly via microphone.
@@ -34,7 +34,7 @@ English Booster is an EdTech web platform designed to solve a common global chal
    - Direct AI voice and video calls powered by **Google Gemini** with live speech recognition and vocal synthesis.
    - Post-call summary with speaking duration, fluency score, and `+50 XP` reward.
 
-5. **AI English Coach (Emma AI Powered by Gemini)**
+5. **AI English Coach & Partner (Gemini AI Powered by Google Gemini)**
    - Universal knowledge mentor capable of answering any question and adapting to CEFR levels (A1 to C2).
    - Instant text-to-speech voice playback in natural British/American English.
    - Radar and bar analytics tracking: Speaking, Vocabulary, Grammar, Fluency, and Confidence.

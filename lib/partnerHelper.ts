@@ -95,7 +95,7 @@ export function isRealPartnerProfile(profile: any): boolean {
   const email = (profile.email || '').toLowerCase().trim();
   const name = (profile.full_name || profile.name || '').toLowerCase().trim();
 
-  // AI Partner Emma is always valid
+  // AI Partner Gemini is always valid
   if (profile.id === 'eb-ai-coach' || profile.is_ai === true) {
     return true;
   }

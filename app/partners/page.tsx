@@ -8,7 +8,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useTranslation } from '@/lib/i18n';
 import { getUserAvatar } from '@/lib/avatarHelper';
 import { isRealPartnerProfile } from '@/lib/partnerHelper';
-import { EMMA_AI_PARTNER } from '@/lib/aiAgent';
+import { GEMINI_AI_PARTNER } from '@/lib/aiAgent';
 import { broadcastIncomingCall } from '@/lib/callSignaling';
 import type { Database } from '@/lib/database.types';
 import { 
@@ -166,49 +166,49 @@ export default function PartnersPage() {
             };
           });
 
-          // Create Emma AI Partner card (pinned 24/7 speaking partner & coach)
-          const emmaPartner: DisplayPartner = {
-            id: EMMA_AI_PARTNER.id,
-            name: EMMA_AI_PARTNER.name,
-            avatar: EMMA_AI_PARTNER.avatar,
-            country: EMMA_AI_PARTNER.country,
-            flag: EMMA_AI_PARTNER.flag,
-            level: EMMA_AI_PARTNER.level,
-            target_level: EMMA_AI_PARTNER.target_level,
+          // Create Gemini AI Partner card (pinned 24/7 speaking partner & coach)
+          const geminiPartner: DisplayPartner = {
+            id: GEMINI_AI_PARTNER.id,
+            name: GEMINI_AI_PARTNER.name,
+            avatar: GEMINI_AI_PARTNER.avatar,
+            country: GEMINI_AI_PARTNER.country,
+            flag: GEMINI_AI_PARTNER.flag,
+            level: GEMINI_AI_PARTNER.level,
+            target_level: GEMINI_AI_PARTNER.target_level,
             bio: isFr 
-              ? "Bonjour ! Je suis Emma, votre partenaire & coach IA en anglais disponible 24h/24. Discutons en direct, développons votre fluidité orale, corrigeons vos erreurs et pratiquons la conversation sans stress !"
-              : EMMA_AI_PARTNER.bio,
-            specialty: isFr ? '🤖 Coach IA de Conversation • 24/7' : EMMA_AI_PARTNER.specialty,
-            interests: EMMA_AI_PARTNER.interests,
+              ? "Bonjour ! Je suis Gemini AI, votre partenaire & assistant IA en anglais disponible 24h/24. Posez-moi toutes vos questions, discutons en direct, développons votre fluidité orale, corrigeons vos erreurs et pratiquons la conversation sans stress !"
+              : GEMINI_AI_PARTNER.bio,
+            specialty: isFr ? '✨ Google Gemini IA Partenaire • 24/7' : GEMINI_AI_PARTNER.specialty,
+            interests: GEMINI_AI_PARTNER.interests,
             is_online: true,
-            rating: 4.99,
-            reviews_count: 520,
+            rating: 5.0,
+            reviews_count: 3180,
             streak: 365,
             is_ai: true,
           };
 
-          setPartners([emmaPartner, ...realPartners]);
+          setPartners([geminiPartner, ...realPartners]);
         } else {
-          const emmaPartner: DisplayPartner = {
-            id: EMMA_AI_PARTNER.id,
-            name: EMMA_AI_PARTNER.name,
-            avatar: EMMA_AI_PARTNER.avatar,
-            country: EMMA_AI_PARTNER.country,
-            flag: EMMA_AI_PARTNER.flag,
-            level: EMMA_AI_PARTNER.level,
-            target_level: EMMA_AI_PARTNER.target_level,
+          const geminiPartner: DisplayPartner = {
+            id: GEMINI_AI_PARTNER.id,
+            name: GEMINI_AI_PARTNER.name,
+            avatar: GEMINI_AI_PARTNER.avatar,
+            country: GEMINI_AI_PARTNER.country,
+            flag: GEMINI_AI_PARTNER.flag,
+            level: GEMINI_AI_PARTNER.level,
+            target_level: GEMINI_AI_PARTNER.target_level,
             bio: isFr 
-              ? "Bonjour ! Je suis Emma, votre partenaire & coach IA en anglais disponible 24h/24. Discutons en direct, développons votre fluidité orale, corrigeons vos erreurs et pratiquons la conversation sans stress !"
-              : EMMA_AI_PARTNER.bio,
-            specialty: isFr ? '🤖 Coach IA de Conversation • 24/7' : EMMA_AI_PARTNER.specialty,
-            interests: EMMA_AI_PARTNER.interests,
+              ? "Bonjour ! Je suis Gemini AI, votre partenaire & assistant IA en anglais disponible 24h/24. Posez-moi toutes vos questions, discutons en direct, développons votre fluidité orale, corrigeons vos erreurs et pratiquons la conversation sans stress !"
+              : GEMINI_AI_PARTNER.bio,
+            specialty: isFr ? '✨ Google Gemini IA Partenaire • 24/7' : GEMINI_AI_PARTNER.specialty,
+            interests: GEMINI_AI_PARTNER.interests,
             is_online: true,
-            rating: 4.99,
-            reviews_count: 520,
+            rating: 5.0,
+            reviews_count: 3180,
             streak: 365,
             is_ai: true,
           };
-          setPartners([emmaPartner]);
+          setPartners([geminiPartner]);
         }
 
         if (shortsData && shortsData.length > 0) {
@@ -281,7 +281,7 @@ export default function PartnersPage() {
     return Math.min(99, Math.max(78, score));
   };
 
-  // Filter partners: keep Emma AI always and hide self from partners list
+  // Filter partners: keep Gemini AI always and hide self from partners list
   const availablePartners = useMemo(() => {
     return user ? partners.filter(p => p.is_ai || p.id !== user.id) : partners;
   }, [user, partners]);
@@ -297,7 +297,7 @@ export default function PartnersPage() {
         p.country.toLowerCase().includes(q) ||
         p.interests.some(i => i.toLowerCase().includes(q));
 
-      // Emma AI speaks with learners of ALL CEFR levels
+      // Gemini AI speaks with learners of ALL CEFR levels
       const matchesLevel = selectedLevel === 'ALL' || p.is_ai || p.level === selectedLevel;
       const matchesInterest = selectedInterest === 'ALL' || p.is_ai || p.interests.includes(selectedInterest);
 
@@ -308,7 +308,7 @@ export default function PartnersPage() {
       return matchesSearch && matchesLevel && matchesInterest && matchesStatus;
     });
 
-    // Sort: Emma AI always first, then Online partners, then alphabetical
+    // Sort: Gemini AI always first, then Online partners, then alphabetical
     list.sort((a, b) => {
       if (a.is_ai && !b.is_ai) return -1;
       if (!a.is_ai && b.is_ai) return 1;

@@ -28,12 +28,12 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { 
-  generateEmmaAIResponse, 
+  generateGeminiAIResponse,
   speakEnglishText, 
   stopSpeaking, 
   findGrammarCoachingTip, 
   AI_TOPIC_STARTERS,
-  EMMA_AI_PARTNER 
+  GEMINI_AI_PARTNER
 } from '@/lib/aiAgent';
 import { 
   RTC_CONFIG, 
@@ -102,7 +102,7 @@ function CallContent() {
   const [hasRemoteStream, setHasRemoteStream] = useState(false);
   const [remoteEndedNotice, setRemoteEndedNotice] = useState<string | null>(null);
 
-  // Emma AI Live Voice & Video Call State
+  // Gemini AI Live Voice & Video Call State
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [isListeningUser, setIsListeningUser] = useState(false);
@@ -197,11 +197,11 @@ function CallContent() {
     if (isAiCall) {
       setPartnerProfile({
         id: 'eb-ai-coach',
-        full_name: 'Emma AI • English Coach',
-        avatar_url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80',
-        flag: '🇬🇧',
-        current_level: 'C2 Native',
-        country: 'Global / London',
+        full_name: GEMINI_AI_PARTNER.name,
+        avatar_url: GEMINI_AI_PARTNER.avatar,
+        flag: GEMINI_AI_PARTNER.flag,
+        current_level: GEMINI_AI_PARTNER.level,
+        country: GEMINI_AI_PARTNER.country,
       });
       setCallStatus('connected');
       setHasRemoteStream(true);
@@ -391,7 +391,7 @@ function CallContent() {
 
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
-    // Pause recognition while Emma is speaking
+    // Pause recognition while Gemini is speaking
     if (recognitionRef.current) {
       try { recognitionRef.current.abort(); } catch {}
     }
@@ -426,7 +426,7 @@ function CallContent() {
     }
 
     if (!reply) {
-      reply = generateEmmaAIResponse(text, aiTurnHistoryRef.current.slice(-6), profile?.current_level || 'B1');
+      reply = generateGeminiAIResponse(text, aiTurnHistoryRef.current.slice(-6), profile?.current_level || 'B1');
     }
 
     aiTurnHistoryRef.current.push({ role: 'assistant', content: reply });
@@ -474,7 +474,7 @@ function CallContent() {
     );
   };
 
-  // Initial Emma spoken greeting upon connecting AI call
+  // Initial Gemini spoken greeting upon connecting AI call
   useEffect(() => {
     if (!isAiCall || callStatus !== 'connected') return;
 
@@ -482,8 +482,8 @@ function CallContent() {
     const timer = setTimeout(() => {
       if (!isMounted) return;
       const greeting = isVideoParam
-        ? "Hello! I'm Emma, your English Booster live video coach! It's fantastic to see you and practice speaking together. How are you feeling today?"
-        : "Hello! I'm Emma, your English Booster speaking coach. It's wonderful to practice speaking with you! How are you doing today, and what would you like to discuss?";
+        ? "Hello! I'm Gemini AI, your English Booster live video partner and coach! It's fantastic to see you and practice speaking together. How are you feeling today?"
+        : "Hello! I'm Gemini AI, your English Booster speaking partner and coach. It's wonderful to practice speaking with you! How are you doing today, and what would you like to discuss?";
 
       setAiSpokenText(greeting);
       aiTurnHistoryRef.current.push({ role: 'assistant', content: greeting });
@@ -1306,7 +1306,7 @@ function CallContent() {
         <div className="relative w-full h-full rounded-2xl sm:rounded-3xl overflow-hidden bg-gradient-to-b from-[#0b1329] via-[#070d1d] to-[#040814] border border-white/10 flex flex-col items-center justify-between p-3 sm:p-5 shadow-2xl">
           {isAiCall ? (
             /* ============================================================== */
-            /* EMMA AI INTERACTIVE VIDEO COACH STAGE                          */
+            /* GEMINI AI INTERACTIVE VIDEO PARTNER STAGE                      */
             /* ============================================================== */
             <div className="w-full h-full flex flex-col justify-between items-center relative z-10">
               
@@ -1361,7 +1361,7 @@ function CallContent() {
                 </div>
               </div>
 
-              {/* Center: Emma Video Avatar & Real-time Equalizer Waveform */}
+              {/* Center: Gemini Video Avatar & Real-time Equalizer Waveform */}
               <div className="flex flex-col items-center justify-center my-auto py-2">
                 <div className="relative">
                   {/* Dynamic Audio Halo Wave */}
@@ -1373,8 +1373,8 @@ function CallContent() {
                   )}
 
                   <img
-                    src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80"
-                    alt="Emma AI"
+                    src={GEMINI_AI_PARTNER.avatar}
+                    alt="Gemini AI"
                     className={`w-24 h-24 xs:w-32 xs:h-32 sm:w-40 sm:h-40 rounded-full object-cover transition-all duration-300 ${
                       isAiSpeaking
                         ? 'ring-4 ring-emerald-400 shadow-[0_0_50px_rgba(52,211,153,0.6)] scale-105'
@@ -1387,16 +1387,16 @@ function CallContent() {
                   />
 
                   <span className="absolute bottom-1 right-1 sm:bottom-2 sm:right-2 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#060a14] border-2 border-emerald-400 flex items-center justify-center text-sm sm:text-base shadow-lg">
-                    🇬🇧
+                    ✨
                   </span>
                 </div>
 
                 <p className="mt-3 text-base sm:text-lg font-black text-white flex items-center gap-2">
-                  <span>Emma AI • English Coach</span>
+                  <span>Gemini AI • Coach Partenaires</span>
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                 </p>
 
-                {/* Soundwave Equalizer Bars when Emma speaks */}
+                {/* Soundwave Equalizer Bars when Gemini speaks */}
                 {isAiSpeaking ? (
                   <div className="flex items-center gap-1 h-6 mt-2">
                     {[10, 22, 14, 28, 16, 24, 18, 30, 15, 25, 12, 20].map((h, i) => (
@@ -1415,7 +1415,7 @@ function CallContent() {
                 ) : isAiThinking ? (
                   <p className="mt-2 text-xs text-violet-300 font-semibold flex items-center gap-1.5 animate-pulse">
                     <Sparkles className="w-3.5 h-3.5 text-violet-400" />
-                    <span>{isFr ? 'Emma formule sa réponse...' : 'Emma is formulating response...'}</span>
+                    <span>{isFr ? 'Gemini AI formule sa réponse...' : 'Gemini AI is formulating response...'}</span>
                   </p>
                 ) : (
                   <p className="mt-2 text-xs text-slate-400">
@@ -1694,7 +1694,7 @@ function CallContent() {
                 ? 'bg-emerald-500 hover:bg-emerald-600 text-slate-950 shadow-[0_0_20px_rgba(16,185,129,0.4)] animate-pulse'
                 : 'bg-white/10 hover:bg-white/20 text-white'
             }`}
-            title={isAiSpeaking ? "Skip Emma's speech" : "Tap to speak or send"}
+            title={isAiSpeaking ? "Skip Gemini's speech" : "Tap to speak or send"}
           >
             {isAiSpeaking ? (
               <>
@@ -1715,7 +1715,7 @@ function CallContent() {
           </button>
         )}
 
-        {/* Replay Emma's Speech Button */}
+        {/* Replay Gemini's Speech Button */}
         {isAiCall && aiSpokenText && (
           <button
             onClick={() => {
@@ -1733,7 +1733,7 @@ function CallContent() {
               }
             }}
             className="p-2.5 xs:p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer"
-            title={isFr ? "Réécouter Emma" : "Replay Emma's speech"}
+            title={isFr ? "Réécouter Gemini" : "Replay Gemini's speech"}
           >
             <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
           </button>
