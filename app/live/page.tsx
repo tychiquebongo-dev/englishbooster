@@ -102,10 +102,12 @@ function LocalVideoView({
 
   useEffect(() => {
     if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
+      if (videoRef.current.srcObject !== stream) {
+        videoRef.current.srcObject = stream;
+      }
       videoRef.current.play().catch(() => {});
     }
-  }, [stream]);
+  }, [stream, isVideoOn]);
 
   const hasVideoTrack = !!(stream && stream.getVideoTracks().length > 0);
   const showVideo = isVideoOn && hasVideoTrack;
@@ -176,11 +178,11 @@ function RemoteVideoView({
 
   useEffect(() => {
     if (stream) {
-      if (videoRef.current) {
+      if (videoRef.current && videoRef.current.srcObject !== stream) {
         videoRef.current.srcObject = stream;
         videoRef.current.play().catch(() => {});
       }
-      if (audioRef.current) {
+      if (audioRef.current && audioRef.current.srcObject !== stream) {
         audioRef.current.srcObject = stream;
         audioRef.current.play().catch(() => {});
       }
@@ -283,7 +285,7 @@ function LiveRoomsContent() {
   const searchParams = useSearchParams();
   const { user, profile, playSound } = useAuth();
   const { isFr } = useTranslation();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const activeRoomIdParam = searchParams?.get('room') || null;
 
@@ -800,7 +802,7 @@ function LiveRoomsContent() {
 
     const channelName = `live_room_${activeRoom.id.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
     const channel = supabase.channel(channelName, {
-      config: { presence: { key: effectiveProfile.id } }
+      config: { presence: { key: effectiveProfileRef.current.id } }
     });
 
     channel
@@ -923,7 +925,7 @@ function LiveRoomsContent() {
         localStreamRef.current = null;
       }
     };
-  }, [activeRoom?.id, effectiveProfile.id, supabase]);
+  }, [activeRoom?.id]);
 
   // 4. Audio Autoplay Policy Unlock Listener (User Interaction)
   useEffect(() => {
@@ -952,6 +954,13 @@ function LiveRoomsContent() {
   const autoJoinStage = async (channelToUse?: any, requestedSeatNumber?: number) => {
     const ch = channelToUse || channelRef.current;
     if (!activeRoom) return;
+
+    if (mySeatNumberRef.current !== null && requestedSeatNumber === undefined) {
+      if (!localStreamRef.current || !localStreamRef.current.active) {
+        await acquireLocalMediaStream();
+      }
+      return;
+    }
 
     // 1. Force acquire camera & microphone
     const stream = await acquireLocalMediaStream();
@@ -1062,8 +1071,6 @@ function LiveRoomsContent() {
         }
       }
     });
-
-    playSound('call');
   };
 
   // Join Seat on Stage (Manual click on empty seat)
@@ -2230,7 +2237,7 @@ function LiveRoomsContent() {
                 type="button"
                 onClick={() => {
                   if (allRooms.length > 0) {
-                    playSound('call');
+                    playSound('click');
                     router.push(`/live?room=${encodeURIComponent(allRooms[0].id)}`);
                   } else {
                     playSound('click');
@@ -2268,7 +2275,7 @@ function LiveRoomsContent() {
                 type="button"
                 onClick={() => {
                   if (directRoomCode.trim()) {
-                    playSound('call');
+                    playSound('click');
                     router.push(`/live?room=${encodeURIComponent(directRoomCode.trim())}`);
                   }
                 }}
@@ -2496,7 +2503,7 @@ function LiveRoomsContent() {
 
                   <Link
                     href={`/live?room=${encodeURIComponent(room.id)}`}
-                    onClick={() => playSound('call')}
+                    onClick={() => playSound('click')}
                     className="px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider text-slate-950 bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(74,222,128,0.3)] transition-all flex items-center gap-2 cursor-pointer"
                   >
                     <Video className="w-4 h-4" />

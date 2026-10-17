@@ -396,8 +396,8 @@ export default function GlobalCallNotifier() {
 
   // Centralized handler to trigger incoming call modal & notifications
   const handleTriggerIncomingCall = (payload: IncomingCallPayload) => {
-    // If current user is already in a call with this roomId, ignore
-    if (pathnameRef.current === '/call') return;
+    // If current user is already in a call or in a live video room, ignore
+    if (pathnameRef.current === '/call' || pathnameRef.current?.startsWith('/live')) return;
     if (!payload || (payload.receiverId && user?.id && payload.receiverId !== user.id)) return;
 
     // If call modal is already active for this call session, keep vibration and audio going without resetting state
