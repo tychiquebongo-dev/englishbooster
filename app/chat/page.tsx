@@ -53,6 +53,11 @@ import {
 import Link from 'next/link';
 import InvitePartnerModal from '@/components/InvitePartnerModal';
 import { useTranslation } from '@/lib/i18n';
+import { 
+  notifyBrowserBar, 
+  stopBrowserBarNotification, 
+  showDesktopNotification 
+} from '@/lib/browserNotifications';
 import type { Database } from '@/lib/database.types';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -194,6 +199,7 @@ function RealConversationContent() {
   const [now, setNow] = useState(Date.now());
   const [loadingPartners, setLoadingPartners] = useState(true);
   const [searchFilter, setSearchFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'online' | 'offline'>('all');
   const [conversationMap, setConversationMap] = useState<Record<string, ChatMessage[]>>({});
   const [inputText, setInputText] = useState('');
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
@@ -750,6 +756,22 @@ function RealConversationContent() {
         });
         playSound?.('chime');
 
+        // Signal message on partner's browser bar if tab is hidden
+        if (typeof document !== 'undefined' && document.hidden) {
+          notifyBrowserBar({
+            type: 'message',
+            senderName: activePartner.name,
+            textSnippet: incoming.text,
+            durationMs: 12000,
+          });
+          showDesktopNotification({
+            title: `💬 Message de ${activePartner.name}`,
+            body: incoming.text,
+            icon: activePartner.avatar,
+            tag: `eb-chat-${activePartner.id}`,
+          });
+        }
+
         // Since user is currently active in this conversation, mark incoming message as read immediately!
         supabase
           .from('messages')
@@ -798,6 +820,22 @@ function RealConversationContent() {
               return nextMap;
             });
             playSound?.('chime');
+
+            // Signal message on partner's browser bar if tab is hidden
+            if (typeof document !== 'undefined' && document.hidden) {
+              notifyBrowserBar({
+                type: 'message',
+                senderName: activePartner.name,
+                textSnippet: incoming.text,
+                durationMs: 12000,
+              });
+              showDesktopNotification({
+                title: `💬 Message de ${activePartner.name}`,
+                body: incoming.text,
+                icon: activePartner.avatar,
+                tag: `eb-chat-${activePartner.id}`,
+              });
+            }
 
             // Mark message as read and notify sender
             supabase
@@ -881,6 +919,24 @@ function RealConversationContent() {
         const callerAvatar = incomingCall.metadata?.callerAvatar || '';
         const isVideo = Boolean(incomingCall.metadata?.isVideo);
 
+        // Flash incoming call on partner's browser bar (onglet & barre de tâches)
+        notifyBrowserBar({
+          type: isVideo ? 'video_call' : 'voice_call',
+          senderName: callerName,
+          durationMs: 32000,
+        });
+
+        // Show native HTML5 desktop notification
+        showDesktopNotification({
+          title: isVideo
+            ? `📹 Appel Vidéo entrant : ${callerName}`
+            : `📞 Appel Vocal entrant : ${callerName}`,
+          body: `${callerName} vous appelle en direct sur English Booster. Cliquez pour décrocher.`,
+          icon: callerAvatar,
+          isCall: true,
+          isVideo,
+        });
+
         setIncomingCallData({
           callerId: callerPeerId,
           callerName,
@@ -895,6 +951,7 @@ function RealConversationContent() {
 
     return () => {
       stopLocalMediaStream();
+      stopBrowserBarNotification();
       if (peerInstance) {
         try {
           peerInstance.destroy();
@@ -907,6 +964,7 @@ function RealConversationContent() {
   const handleAnswerCall = async () => {
     if (!incomingCallData) return;
     playSound?.('click');
+    stopBrowserBarNotification();
 
     const isVideo = incomingCallData.isVideo;
     setCallIsVideo(isVideo);
@@ -946,6 +1004,7 @@ function RealConversationContent() {
   // Decline Incoming Remote Call
   const handleDeclineCall = () => {
     playSound?.('click');
+    stopBrowserBarNotification();
     if (incomingCallData?.callObject) {
       try {
         incomingCallData.callObject.close();
@@ -1604,9 +1663,20 @@ function RealConversationContent() {
     window.speechSynthesis.speak(utterance);
   };
 
-  // Filtered partners based on search
-  const filteredPartners = useMemo(() => {
-    let list = partners;
+  // Classified partners based on Online / Offline status and search filter
+  const { classifiedPartners, onlineCount, offlineCount } = useMemo(() => {
+    // 1. Calculate real-time online status for each partner
+    const annotated = partners.map(p => {
+      const isFresh = p.updated_at ? (now - new Date(p.updated_at).getTime() < 90000) : false;
+      const isOnline = Boolean(onlineUserIds.has(p.id) || (p.is_online && isFresh));
+      return { ...p, is_online: isOnline };
+    });
+
+    const onCount = annotated.filter(p => p.is_online).length;
+    const offCount = annotated.filter(p => !p.is_online).length;
+
+    // 2. Search filter
+    let list = annotated;
     const q = searchFilter.toLowerCase().trim();
     if (q) {
       list = list.filter(p =>
@@ -1615,8 +1685,27 @@ function RealConversationContent() {
         p.specialty.toLowerCase().includes(q)
       );
     }
-    return list;
-  }, [partners, searchFilter]);
+
+    // 3. Status filter tab (all | online | offline)
+    if (statusFilter === 'online') {
+      list = list.filter(p => p.is_online);
+    } else if (statusFilter === 'offline') {
+      list = list.filter(p => !p.is_online);
+    }
+
+    // 4. Sort: Online partners first, then by name
+    list.sort((a, b) => {
+      if (a.is_online && !b.is_online) return -1;
+      if (!a.is_online && b.is_online) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return {
+      classifiedPartners: list,
+      onlineCount: onCount,
+      offlineCount: offCount,
+    };
+  }, [partners, searchFilter, statusFilter, onlineUserIds, now]);
 
   return (
     <div data-fullscreen-route="true" className="w-full max-w-7xl mx-auto px-0 md:px-4 lg:px-6 py-0 md:py-3 h-[calc(100dvh-3.5rem)] sm:h-[calc(100dvh-4rem)] md:h-[calc(100dvh-5.5rem)] flex flex-col min-h-0 overflow-hidden">
@@ -2089,6 +2178,65 @@ function RealConversationContent() {
             </div>
           </div>
 
+          {/* Classification Filter Bar: Tous | En ligne | Hors ligne */}
+          <div className="px-2.5 py-2 bg-[#111b21] border-b border-white/5 flex items-center gap-1.5 shrink-0 overflow-x-auto scrollbar-none">
+            <button
+              type="button"
+              onClick={() => {
+                playSound?.('click');
+                setStatusFilter('all');
+              }}
+              className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                statusFilter === 'all'
+                  ? 'bg-white/15 text-white border border-white/20 shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
+              }`}
+            >
+              <span>{isFr ? 'Tous' : 'All'}</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/40 text-slate-300 font-bold">
+                {onlineCount + offlineCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                playSound?.('click');
+                setStatusFilter('online');
+              }}
+              className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                statusFilter === 'online'
+                  ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/50 shadow-[0_0_12px_rgba(16,185,129,0.3)]'
+                  : 'text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10 border border-transparent'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>{isFr ? 'En ligne' : 'Online'}</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/30 text-emerald-200 font-extrabold">
+                {onlineCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                playSound?.('click');
+                setStatusFilter('offline');
+              }}
+              className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                statusFilter === 'offline'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
+                  : 'text-slate-400 hover:text-amber-300 hover:bg-amber-500/10 border border-transparent'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full border border-dashed border-amber-400 bg-amber-500/40" />
+              <span>{isFr ? 'Hors ligne' : 'Offline'}</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-200 font-extrabold">
+                {offlineCount}
+              </span>
+            </button>
+          </div>
+
           {/* Real Registered Members List */}
           <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-white/5 scrollbar-thin chat-scroll-container">
             {loadingPartners ? (
@@ -2096,79 +2244,123 @@ function RealConversationContent() {
                 <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
                 <p className="text-xs text-slate-400">Loading registered members...</p>
               </div>
-            ) : filteredPartners.length === 0 ? (
+            ) : classifiedPartners.length === 0 ? (
               <div className="p-6 text-center space-y-3">
                 <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-400">
                   <Users className="w-6 h-6" />
                 </div>
-                <p className="text-xs font-bold text-white">No other registered members found.</p>
+                <p className="text-xs font-bold text-white">
+                  {statusFilter === 'online'
+                    ? (isFr ? 'Aucun partenaire en ligne actuellement.' : 'No partner currently online.')
+                    : statusFilter === 'offline'
+                    ? (isFr ? 'Aucun partenaire hors ligne.' : 'No offline partner.')
+                    : (isFr ? 'Aucun partenaire trouvé.' : 'No registered member found.')}
+                </p>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Only real registered users appear here. Invite a conversation partner to start practicing!
+                  {statusFilter === 'online'
+                    ? (isFr ? 'Vous pouvez appeler ou envoyer un message aux partenaires hors ligne, ils recevront une alerte sur leur navigateur et téléphone.' : 'You can still call or message offline partners; they receive notifications.')
+                    : (isFr ? 'Seuls les vrais membres inscrits apparaissent ici. Invitez un partenaire pour échanger !' : 'Only registered users appear here. Invite a partner to start practicing!')}
                 </p>
                 <button
                   type="button"
-                  onClick={() => setInviteModalOpen(true)}
+                  onClick={() => {
+                    if (statusFilter !== 'all') {
+                      setStatusFilter('all');
+                    } else {
+                      setInviteModalOpen(true);
+                    }
+                  }}
                   className="px-3 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold text-xs"
                 >
-                  Invite Partner
+                  {statusFilter !== 'all' 
+                    ? (isFr ? 'Voir tous les membres' : 'View all members') 
+                    : (isFr ? 'Inviter un partenaire' : 'Invite Partner')}
                 </button>
               </div>
             ) : (
-              filteredPartners.map((partner) => {
+              classifiedPartners.map((partner, idx) => {
                 const isSelected = activePartner?.id === partner.id;
-                const isFresh = partner.updated_at ? (now - new Date(partner.updated_at).getTime() < 90000) : false;
-                const isOnline = Boolean(onlineUserIds.has(partner.id) || (partner.is_online && isFresh));
+                const isOnline = partner.is_online;
                 const msgs = conversationMap[partner.id] || [];
                 const lastMsg = msgs[msgs.length - 1];
 
-                return (
-                  <button
-                    key={partner.id}
-                    onClick={() => {
-                      playSound?.('click');
-                      setActivePartnerId(partner.id);
-                      setMobileShowChat(true);
-                      setShowEmojiPicker(false);
-                    }}
-                    className={`w-full px-3.5 py-3 flex items-center gap-3 transition-colors text-left ${
-                      isSelected ? 'bg-[#2a3942]' : 'hover:bg-[#202c33]'
-                    }`}
-                  >
-                    <div className="relative shrink-0">
-                      <img
-                        src={partner.avatar}
-                        alt={partner.name}
-                        className={`w-12 h-12 rounded-full object-cover transition-all ${
-                          isOnline ? 'ring-2 ring-emerald-500/60' : 'ring-1 ring-amber-400/50 ring-dashed'
-                        }`}
-                      />
-                      {isOnline ? (
-                        <span 
-                          className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-[#00a884] border-2 border-[#111b21] shadow-[0_0_8px_rgba(0,168,132,0.8)]" 
-                          title="online" 
-                        />
-                      ) : (
-                        <span 
-                          className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-dashed border-amber-400 bg-amber-500/40" 
-                          title="offline" 
-                        />
-                      )}
-                    </div>
+                // Section headers when viewing "all"
+                const showOnlineHeader = statusFilter === 'all' && isOnline && idx === 0;
+                const showOfflineHeader = statusFilter === 'all' && !isOnline && (idx === 0 || classifiedPartners[idx - 1]?.is_online);
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-0.5 gap-1">
-                        <span className="font-bold text-sm text-white truncate flex items-center gap-1.5">
-                          <span>{partner.name}</span>
-                          <span>{partner.flag}</span>
+                return (
+                  <React.Fragment key={partner.id}>
+                    {showOnlineHeader && (
+                      <div className="px-3.5 py-1 bg-[#182229] border-y border-white/5 flex items-center justify-between text-[10px] font-black tracking-wider text-emerald-400 uppercase">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          {isFr ? 'Partenaires en ligne' : 'Online Partners'}
                         </span>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {isOnline ? (
-                            <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 inline-flex items-center gap-1 uppercase tracking-wider">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                              online
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded border border-dashed border-amber-400/70 bg-amber-500/10 text-amber-300 inline-flex items-center gap-1 uppercase tracking-wider">
+                        <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300">
+                          {onlineCount}
+                        </span>
+                      </div>
+                    )}
+
+                    {showOfflineHeader && (
+                      <div className="px-3.5 py-1 bg-[#182229] border-y border-white/5 flex items-center justify-between text-[10px] font-black tracking-wider text-amber-400 uppercase">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full border border-dashed border-amber-400 bg-amber-500/40" />
+                          {isFr ? 'Partenaires hors ligne' : 'Offline Partners'}
+                        </span>
+                        <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300">
+                          {offlineCount}
+                        </span>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playSound?.('click');
+                        setActivePartnerId(partner.id);
+                        setMobileShowChat(true);
+                        setShowEmojiPicker(false);
+                      }}
+                      className={`w-full px-3.5 py-3 flex items-center gap-3 transition-colors text-left ${
+                        isSelected ? 'bg-[#2a3942]' : 'hover:bg-[#202c33]'
+                      }`}
+                    >
+                      <div className="relative shrink-0">
+                        <img
+                          src={partner.avatar}
+                          alt={partner.name}
+                          className={`w-12 h-12 rounded-full object-cover transition-all ${
+                            isOnline ? 'ring-2 ring-emerald-500/60' : 'ring-1 ring-amber-400/50 ring-dashed'
+                          }`}
+                        />
+                        {isOnline ? (
+                          <span 
+                            className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-[#00a884] border-2 border-[#111b21] shadow-[0_0_8px_rgba(0,168,132,0.8)]" 
+                            title="online" 
+                          />
+                        ) : (
+                          <span 
+                            className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-dashed border-amber-400 bg-amber-500/40" 
+                            title="offline" 
+                          />
+                        )}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-0.5 gap-1">
+                          <span className="font-bold text-sm text-white truncate flex items-center gap-1.5">
+                            <span>{partner.name}</span>
+                            <span>{partner.flag}</span>
+                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {isOnline ? (
+                              <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 inline-flex items-center gap-1 uppercase tracking-wider">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                online
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded border border-dashed border-amber-400/70 bg-amber-500/10 text-amber-300 inline-flex items-center gap-1 uppercase tracking-wider">
                               offline
                             </span>
                           )}
@@ -2183,8 +2375,9 @@ function RealConversationContent() {
                       </p>
                     </div>
                   </button>
-                );
-              })
+                </React.Fragment>
+              );
+            })
             )}
           </div>
 

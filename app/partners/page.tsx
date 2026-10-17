@@ -76,6 +76,7 @@ export default function PartnersPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLevel, setSelectedLevel] = useState('ALL');
   const [selectedInterest, setSelectedInterest] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONLINE' | 'OFFLINE'>('ALL');
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
 
   useEffect(() => {
@@ -200,9 +201,12 @@ export default function PartnersPage() {
     return user ? partners.filter(p => p.id !== user.id) : partners;
   }, [user, partners]);
 
+  const onlineCount = useMemo(() => availablePartners.filter(p => p.is_online).length, [availablePartners]);
+  const offlineCount = useMemo(() => availablePartners.filter(p => !p.is_online).length, [availablePartners]);
+
   const filteredPartners = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    return availablePartners.filter(p => {
+    let list = availablePartners.filter(p => {
       const matchesSearch = !q || 
         p.name.toLowerCase().includes(q) ||
         p.country.toLowerCase().includes(q) ||
@@ -211,9 +215,22 @@ export default function PartnersPage() {
       const matchesLevel = selectedLevel === 'ALL' || p.level === selectedLevel;
       const matchesInterest = selectedInterest === 'ALL' || p.interests.includes(selectedInterest);
 
-      return matchesSearch && matchesLevel && matchesInterest;
+      const matchesStatus = statusFilter === 'ALL' || 
+        (statusFilter === 'ONLINE' && p.is_online) || 
+        (statusFilter === 'OFFLINE' && !p.is_online);
+
+      return matchesSearch && matchesLevel && matchesInterest && matchesStatus;
     });
-  }, [availablePartners, searchQuery, selectedLevel, selectedInterest]);
+
+    // Sort: Online partners first, then by name
+    list.sort((a, b) => {
+      if (a.is_online && !b.is_online) return -1;
+      if (!a.is_online && b.is_online) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return list;
+  }, [availablePartners, searchQuery, selectedLevel, selectedInterest, statusFilter]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-16 space-y-10">
@@ -445,6 +462,69 @@ export default function PartnersPage() {
                 </select>
               </div>
 
+            </div>
+
+            {/* Status Filter Pills: Tous | En ligne | Hors ligne */}
+            <div className="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-white/5 overflow-x-auto scrollbar-none">
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0">
+                {isFr ? "Statut de présence :" : "Presence Status:"}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => {
+                  playSound('click');
+                  setStatusFilter('ALL');
+                }}
+                className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                  statusFilter === 'ALL'
+                    ? 'bg-emerald-500 text-slate-950 font-black shadow-sm'
+                    : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <span>{isFr ? "Tous les membres" : "All members"}</span>
+                <span className="px-1.5 py-0.2 rounded-full bg-black/20 text-[10px]">
+                  {availablePartners.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  playSound('click');
+                  setStatusFilter('ONLINE');
+                }}
+                className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                  statusFilter === 'ONLINE'
+                    ? 'bg-emerald-500 text-slate-950 font-black shadow-sm'
+                    : 'bg-slate-100 dark:bg-white/5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>{isFr ? "En ligne (Online)" : "Online"}</span>
+                <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-[10px]">
+                  {onlineCount}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  playSound('click');
+                  setStatusFilter('OFFLINE');
+                }}
+                className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                  statusFilter === 'OFFLINE'
+                    ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
+                    : 'bg-slate-100 dark:bg-white/5 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full border border-dashed border-amber-400 bg-amber-500/40" />
+                <span>{isFr ? "Hors ligne (Offline)" : "Offline"}</span>
+                <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-[10px]">
+                  {offlineCount}
+                </span>
+              </button>
             </div>
           </div>
 

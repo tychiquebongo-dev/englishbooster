@@ -11,6 +11,11 @@ import {
   broadcastCallDeclined,
   registerPushSubscription
 } from '@/lib/callSignaling';
+import {
+  notifyBrowserBar,
+  stopBrowserBarNotification,
+  showDesktopNotification
+} from '@/lib/browserNotifications';
 import { 
   Phone, 
   PhoneOff, 
@@ -255,9 +260,10 @@ export default function GlobalCallNotifier() {
       clearTimeout(autoDismissTimerRef.current);
       autoDismissTimerRef.current = null;
     }
-    // Stop device vibration
+    // Stop device vibration and browser tab flashing
     triggerVibration(0);
     clearCallNotifications();
+    stopBrowserBarNotification();
   };
 
   const pathnameRef = useRef(pathname);
@@ -284,6 +290,15 @@ export default function GlobalCallNotifier() {
         setIncomingCall(payload);
         playSoundRef.current('call');
         triggerVibration([500, 250, 500, 250, 1000]);
+
+        // 1. Dynamic flashing notification in partner's browser bar (onglet & taskbar)
+        notifyBrowserBar({
+          type: payload.isVideo ? 'video_call' : 'voice_call',
+          senderName: payload.callerName,
+          durationMs: 32000,
+        });
+
+        // 2. Native HTML5 desktop / mobile notification
         showPhoneCallNotification(payload);
 
         // Loop ringtone sound and phone vibration every 2.8s
@@ -348,6 +363,15 @@ export default function GlobalCallNotifier() {
         playSoundRef.current('chime');
         triggerVibration([150, 80, 150]);
         setMessageToast(payload);
+
+        // Flash message notification on browser bar
+        notifyBrowserBar({
+          type: 'message',
+          senderName: payload.senderName,
+          textSnippet: payload.text,
+          durationMs: 12000,
+        });
+
         showPhoneMessageNotification(payload);
 
         if (toastDismissTimerRef.current) clearTimeout(toastDismissTimerRef.current);
