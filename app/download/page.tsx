@@ -80,9 +80,16 @@ export default function DownloadAppPage() {
     if (res === 'accepted') {
       playSound?.('success');
       setInstalledSuccess(true);
-    } else {
+    } else if (activePlatform === 'android' || detectedOs.toLowerCase().includes('android')) {
       setShowAndroidGuideModal(true);
       playSound?.('chime');
+    } else {
+      downloadWindowsUrlShortcut();
+      playSound?.('success');
+      setInstalledSuccess(true);
+      setTimeout(() => {
+        setInstalledSuccess(false);
+      }, 3500);
     }
   };
 

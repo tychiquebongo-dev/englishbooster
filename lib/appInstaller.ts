@@ -9,11 +9,19 @@
 declare global {
   interface Window {
     __eb_install_prompt?: any;
+    __eb_is_installed?: boolean;
   }
 }
 
-// Global target domain
-const APP_URL = 'https://englishbooster.vercel.app';
+/**
+ * Resolve active domain dynamically (supports localhost, vercel preview, production)
+ */
+export function getAppUrl(): string {
+  if (typeof window !== 'undefined' && window.location.origin) {
+    return window.location.origin;
+  }
+  return 'https://englishbooster.vercel.app';
+}
 
 /**
  * Trigger native browser 1-Click PWA Installation
@@ -33,6 +41,7 @@ export async function triggerNativePwaInstall(): Promise<'accepted' | 'dismissed
     const choice = await prompt.userChoice;
     if (choice?.outcome === 'accepted') {
       window.__eb_install_prompt = null;
+      window.__eb_is_installed = true;
       return 'accepted';
     }
     return 'dismissed';
@@ -50,11 +59,11 @@ export async function triggerNativePwaInstall(): Promise<'accepted' | 'dismissed
 export function openAndroidChromeIntent() {
   if (typeof window === 'undefined') return;
   try {
-    const currentUrl = window.location.href;
+    const currentUrl = window.location.href || getAppUrl();
     const cleanUrl = currentUrl.replace(/^https?:\/\//, '');
     window.location.href = `intent://${cleanUrl}#Intent;scheme=https;package=com.android.chrome;end`;
   } catch (e) {
-    window.open(APP_URL, '_blank');
+    window.open(window.location.href || getAppUrl(), '_blank');
   }
 }
 
@@ -73,15 +82,8 @@ export function isNativePwaInstallAvailable(): boolean {
 export function downloadWindowsUrlShortcut() {
   if (typeof window === 'undefined') return;
 
-  const content = `[InternetShortcut]
-URL=${APP_URL}/
-IconIndex=0
-IconFile=${APP_URL}/favicon.ico
-HotKey=0
-IDList=
-[{000214A0-0000-0000-C000-000000000046}]
-Prop3=19,11
-`;
+  const appUrl = getAppUrl();
+  const content = `[InternetShortcut]\r\nURL=${appUrl}/\r\nIconIndex=0\r\nIconFile=${appUrl}/favicon.ico\r\nHotKey=0\r\nIDList=\r\n[{000214A0-0000-0000-C000-000000000046}]\r\nProp3=19,11\r\n`;
   const blob = new Blob([content], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -99,37 +101,8 @@ Prop3=19,11
 export function downloadWindowsCmdInstaller() {
   if (typeof window === 'undefined') return;
 
-  const content = `@echo off
-chcp 65001 >nul
-title Installation English Booster Desktop
-color 0b
-echo ========================================================
-echo        ENGLISH BOOSTER - INSTALLATEUR DESKTOP
-echo ========================================================
-echo.
-echo [1/3] Creation du raccourci sur votre Bureau Windows...
-set TARGET_URL=${APP_URL}
-set DESKTOP_DIR=%USERPROFILE%\\Desktop
-set SHORTCUT_PATH=%DESKTOP_DIR%\\English Booster.url
-
-echo [InternetShortcut] > "%SHORTCUT_PATH%"
-echo URL=%TARGET_URL% >> "%SHORTCUT_PATH%"
-echo IconIndex=0 >> "%SHORTCUT_PATH%"
-echo IconFile=%TARGET_URL%/favicon.ico >> "%SHORTCUT_PATH%"
-
-echo.
-echo [2/3] Verification de l'installation Desktop...
-echo [OK] Raccourci place sur : "%SHORTCUT_PATH%"
-echo.
-echo [3/3] Lancement d'English Booster...
-start "" "%SHORTCUT_PATH%"
-echo.
-echo ========================================================
-echo  Installation terminee avec succes ! Bon apprentissage !
-echo ========================================================
-timeout /t 3 >nul
-exit
-`;
+  const appUrl = getAppUrl();
+  const content = `@echo off\r\nchcp 65001 >nul\r\ntitle Installation English Booster Desktop\r\ncolor 0b\r\necho ========================================================\r\necho        ENGLISH BOOSTER - INSTALLATEUR DESKTOP\r\necho ========================================================\r\necho.\r\necho [1/3] Creation du raccourci sur votre Bureau Windows...\r\nset TARGET_URL=${appUrl}\r\nset DESKTOP_DIR=%USERPROFILE%\\Desktop\r\nset SHORTCUT_PATH=%DESKTOP_DIR%\\English Booster.url\r\n\r\necho [InternetShortcut] > "%SHORTCUT_PATH%"\r\necho URL=%TARGET_URL% >> "%SHORTCUT_PATH%"\r\necho IconIndex=0 >> "%SHORTCUT_PATH%"\r\necho IconFile=%TARGET_URL%/favicon.ico >> "%SHORTCUT_PATH%"\r\n\r\necho.\r\necho [2/3] Verification de l'installation Desktop...\r\necho [OK] Raccourci place sur : "%SHORTCUT_PATH%"\r\necho.\r\necho [3/3] Lancement d'English Booster...\r\nstart "" "%SHORTCUT_PATH%"\r\necho.\r\necho ========================================================\r\necho  Installation terminee avec succes ! Bon apprentissage !\r\necho ========================================================\r\ntimeout /t 3 >nul\r\nexit\r\n`;
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -147,6 +120,7 @@ exit
 export function downloadMobileLauncher() {
   if (typeof window === 'undefined') return;
 
+  const appUrl = getAppUrl();
   const content = `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -156,17 +130,17 @@ export function downloadMobileLauncher() {
   <meta name="theme-color" content="#060a14">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="icon" href="${APP_URL}/favicon.ico">
+  <link rel="icon" href="${appUrl}/favicon.ico">
   <style>
     body { background: #060a14; color: #fff; font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }
     .btn { background: #06b6d4; color: #000; padding: 14px 28px; border-radius: 9999px; text-decoration: none; font-weight: bold; margin-top: 20px; font-size: 16px; box-shadow: 0 4px 15px rgba(6,182,212,0.4); }
   </style>
-  <meta http-equiv="refresh" content="0; url=${APP_URL}/">
+  <meta http-equiv="refresh" content="0; url=${appUrl}/">
 </head>
 <body>
   <h2>English Booster</h2>
   <p>Ouverture de l'application...</p>
-  <a class="btn" href="${APP_URL}/">Ouvrir English Booster</a>
+  <a class="btn" href="${appUrl}/">Ouvrir English Booster</a>
 </body>
 </html>`;
   const blob = new Blob([content], { type: 'text/html;charset=utf-8' });

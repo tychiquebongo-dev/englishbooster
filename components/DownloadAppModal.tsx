@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { 
   X, 
   Download, 
@@ -95,9 +96,16 @@ export default function DownloadAppModal({
         onClose();
         setInstalledSuccess(false);
       }, 2500);
-    } else {
+    } else if (activeTab === 'mobile' || isMobileDevice) {
       setShowAndroidGuide(true);
       playSound?.('chime');
+    } else {
+      downloadWindowsUrlShortcut();
+      playSound?.('success');
+      setInstalledSuccess(true);
+      setTimeout(() => {
+        setInstalledSuccess(false);
+      }, 3000);
     }
   };
 
@@ -117,9 +125,12 @@ export default function DownloadAppModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-md animate-fade-in">
+    <div 
+      className="fixed inset-0 z-[100] pointer-events-auto flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-md animate-fade-in"
+      onClick={onClose}
+    >
       <div 
-        className="relative w-full max-w-xl rounded-3xl bg-[#070d1b] border border-cyan-500/30 shadow-[0_25px_60px_-15px_rgba(6,182,212,0.35)] overflow-hidden flex flex-col max-h-[92vh]"
+        className="relative w-full max-w-xl pointer-events-auto rounded-3xl bg-[#070d1b] border border-cyan-500/30 shadow-[0_25px_60px_-15px_rgba(6,182,212,0.35)] overflow-hidden flex flex-col max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Glow ambient header */}
@@ -489,9 +500,18 @@ export default function DownloadAppModal({
 
         {/* Modal Footer */}
         <div className="relative z-10 p-3 sm:p-4 border-t border-white/10 bg-slate-950/60 flex items-center justify-between">
-          <span className="text-[11px] text-slate-500">
-            English Booster PWA v7 • Multi-platform
-          </span>
+          <Link
+            href="/download"
+            onClick={() => {
+              playSound?.('click');
+              onClose();
+            }}
+            className="text-xs font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition-colors cursor-pointer"
+          >
+            <span>{isFr ? "Guide & téléchargements complets" : "Full installation guide"}</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+
           <button
             type="button"
             onClick={() => {

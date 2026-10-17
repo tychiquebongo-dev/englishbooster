@@ -59,11 +59,11 @@ export default function AndroidInstallGuideModal({
 
   return (
     <div 
-      className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-md animate-fade-in"
+      className="fixed inset-0 z-[120] pointer-events-auto flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-md animate-fade-in"
       onClick={onClose}
     >
       <div 
-        className="relative w-full max-w-lg rounded-3xl bg-[#070e1c] border border-emerald-500/35 shadow-[0_25px_65px_-15px_rgba(16,185,129,0.35)] overflow-hidden flex flex-col max-h-[92vh]"
+        className="relative w-full max-w-lg pointer-events-auto rounded-3xl bg-[#070e1c] border border-emerald-500/35 shadow-[0_25px_65px_-15px_rgba(16,185,129,0.35)] overflow-hidden flex flex-col max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Glow ambient header */}

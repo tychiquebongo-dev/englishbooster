@@ -577,10 +577,12 @@ export default function Navbar() {
       </div>
 
       {/* Global Cross-Platform App Installation Modal */}
-      <DownloadAppModal 
-        isOpen={downloadModalOpen} 
-        onClose={() => setDownloadModalOpen(false)} 
-      />
+      <div className="pointer-events-auto">
+        <DownloadAppModal 
+          isOpen={downloadModalOpen} 
+          onClose={() => setDownloadModalOpen(false)} 
+        />
+      </div>
     </header>
   );
 }
