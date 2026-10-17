@@ -50,6 +50,7 @@ export interface ShortVideoItem {
   user_id?: string;
   ai_verified?: boolean;
   ai_certificate?: string;
+  xpReward?: number;
 }
 
 export interface ShortCommentItem {
@@ -120,6 +121,7 @@ function getLevelLabel(lvl: string, isFr: boolean): string {
 export default function ShortsPage() {
   const { user, profile, playSound } = useAuth();
   const { isFr } = useTranslation();
+  const router = useRouter();
   const supabase = createClient();
 
   const [shortsList, setShortsList] = useState<ShortVideoItem[]>([]);
@@ -170,6 +172,181 @@ export default function ShortsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
+  // Handle video selection from gallery
+  const handleVideoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 100 * 1024 * 1024) {
+      alert(isFr ? 'La vidéo ne doit pas dépasser 100 Mo.' : 'The video must not exceed 100MB.');
+      return;
+    }
+
+    setVideoFile(file);
+    const previewUrl = URL.createObjectURL(file);
+    setVideoPreviewUrl(previewUrl);
+    playSound?.('pop');
+  };
+
+  // Handle Short Video Submission & Upload
+  const handlePublishShort = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!user) {
+      alert(isFr ? 'Veuillez vous connecter pour publier un Short.' : 'Please sign in to publish a Short.');
+      router.push('/login');
+      return;
+    }
+
+    if (!videoFile && !videoPreviewUrl) {
+      alert(isFr ? 'Veuillez sélectionner une vidéo depuis votre galerie.' : 'Please select a video from your gallery.');
+      return;
+    }
+
+    if (!shortTitle.trim()) {
+      alert(isFr ? 'Veuillez donner un titre en anglais à votre Short.' : 'Please give your Short an English title.');
+      return;
+    }
+
+    if (!englishPledged) {
+      alert(isFr ? 'Veuillez confirmer que la vidéo est 100% en anglais.' : 'Please confirm the video is 100% in English.');
+      return;
+    }
+
+    if (aiVerification && !aiVerification.isEnglish) {
+      alert(
+        isFr 
+          ? `L'Agent IA a rejeté ce contenu : ${aiVerification.reasonFr}` 
+          : `The AI Agent rejected this content: ${aiVerification.reason}`
+      );
+      return;
+    }
+
+    setUploading(true);
+    playSound?.('click');
+
+    try {
+      let finalMediaUrl: string | null = null;
+
+      // 1. Cloud Storage Upload
+      if (videoFile) {
+        const fileExt = videoFile.name.split('.').pop() || 'mp4';
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
+        const filePath = `shorts/${user.id}/${fileName}`;
+
+        // Attempt bucket 'videos'
+        try {
+          const { data: uploadData, error: uploadErr } = await supabase.storage
+            .from('videos')
+            .upload(filePath, videoFile, { upsert: true });
+
+          if (!uploadErr && uploadData) {
+            const { data: { publicUrl } } = supabase.storage
+              .from('videos')
+              .getPublicUrl(filePath);
+            if (publicUrl) finalMediaUrl = publicUrl;
+          }
+        } catch (uploadException) {
+          console.warn('Storage bucket videos error:', uploadException);
+        }
+
+        // Fallback to bucket 'avatars'
+        if (!finalMediaUrl) {
+          try {
+            const { data: uploadData2, error: uploadErr2 } = await supabase.storage
+              .from('avatars')
+              .upload(`shorts/${filePath}`, videoFile, { upsert: true });
+
+            if (!uploadErr2 && uploadData2) {
+              const { data: { publicUrl } } = supabase.storage
+                .from('avatars')
+                .getPublicUrl(`shorts/${filePath}`);
+              if (publicUrl) finalMediaUrl = publicUrl;
+            }
+          } catch (uploadException2) {
+            console.warn('Storage bucket avatars error:', uploadException2);
+          }
+        }
+      }
+
+      // If cloud storage upload wasn't available, fallback to videoPreviewUrl
+      if (!finalMediaUrl && videoPreviewUrl) {
+        finalMediaUrl = videoPreviewUrl;
+      }
+
+      const certificateId = aiVerification?.certificateId || `EB-SENTINEL-${Date.now().toString(36).toUpperCase()}`;
+
+      // Encode content: title:::transcript:::category:::level:::ai_verified:::certificateId
+      const storedContent = `${shortTitle.trim()}:::${shortTranscript.trim()}:::${shortCategory}:::${shortLevel}:::ai_verified:::${certificateId}`;
+
+      // 2. Insert into Supabase 'posts' table
+      const { data: newPost, error: insertError } = await supabase
+        .from('posts')
+        .insert({
+          user_id: user.id,
+          category: 'short',
+          content: storedContent,
+          media_type: 'video',
+          media_url: finalMediaUrl,
+          likes_count: 0,
+          comments_count: 0,
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        console.warn('Post insert warning:', insertError);
+      }
+
+      const createdId = newPost?.id || `short-${Date.now()}`;
+      const activeVideoUrl = finalMediaUrl || videoPreviewUrl || '';
+
+      const newShortItem: ShortVideoItem = {
+        id: createdId,
+        title: shortTitle.trim(),
+        speaker: profile?.full_name || user.email?.split('@')[0] || (isFr ? "Apprenant d'anglais" : 'English Learner'),
+        author_avatar: getUserAvatar(profile?.avatar_url, profile?.full_name, profile?.email),
+        author_flag: profile?.flag || '🌐',
+        level: shortLevel,
+        category: shortCategory,
+        video_url: activeVideoUrl,
+        image_fallback: getUserAvatar(profile?.avatar_url, profile?.full_name, profile?.email),
+        transcript: shortTranscript.trim(),
+        likes_count: 0,
+        comments_count: 0,
+        user_id: user.id,
+        ai_verified: true,
+        ai_certificate: certificateId,
+        xpReward: 35,
+      };
+
+      // Add to list and navigate to newly created short
+      setShortsList(prev => [newShortItem, ...prev]);
+      setCurrentIndex(0);
+      setIsPlaying(true);
+
+      playSound?.('celebrate');
+      confetti({
+        particleCount: 60,
+        spread: 70,
+        origin: { y: 0.6 }
+      });
+
+      // Reset modal state
+      setVideoFile(null);
+      setVideoPreviewUrl(null);
+      setShortTitle('');
+      setShortTranscript('');
+      setEnglishPledged(true);
+      setPublishModalOpen(false);
+    } catch (err) {
+      console.error('Error publishing short:', err);
+      alert(isFr ? 'Une erreur est survenue lors de la publication.' : 'An error occurred while publishing.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   // Load published real shorts from Supabase
   useEffect(() => {
     const fetchUserShorts = async () => {
@@ -201,6 +378,7 @@ export default function ShortsPage() {
             const title = parts[0] || 'English Practice Short';
             const transcript = parts[1] || parts[0] || '';
             const category = parts[2] || 'Community English';
+            const itemLevel = parts[3] || author?.current_level || 'B1';
             const isAiVerified = parts.length >= 5 ? parts[4] === 'ai_verified' : true;
             const aiCert = parts.length >= 6 ? parts[5] : undefined;
 
@@ -210,7 +388,7 @@ export default function ShortsPage() {
               speaker: author?.full_name || (isFr ? "Apprenant d'anglais" : 'English Learner'),
               author_avatar: getUserAvatar(author?.avatar_url, author?.full_name),
               author_flag: author?.flag || '🌐',
-              level: level,
+              level: itemLevel,
               category: category,
               video_url: p.media_url,
               image_fallback: getUserAvatar(author?.avatar_url, author?.full_name),
@@ -528,135 +706,6 @@ export default function ShortsPage() {
       console.error('Error posting comment:', err);
     } finally {
       setSubmittingComment(false);
-    }
-  };
-
-  // Video File Selection from gallery
-  const handleVideoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith('video/')) {
-      alert(isFr ? 'Veuillez sélectionner un fichier vidéo valide depuis votre galerie.' : 'Please select a valid video file from your gallery.');
-      return;
-    }
-
-    setVideoFile(file);
-    playSound('click');
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setVideoPreviewUrl(event.target?.result as string);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Publish English Short
-  const handlePublishShort = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !profile) {
-      alert(isFr ? 'Veuillez vous connecter pour publier un Short.' : 'Please sign in to publish a Short.');
-      return;
-    }
-
-    if (!videoFile || !shortTitle.trim()) {
-      alert(isFr ? 'Veuillez choisir une vidéo et un titre en anglais.' : 'Please provide a video and an English title.');
-      return;
-    }
-
-    // 1. Strict AI Sentinel Linguistic Verification
-    const fullText = `${shortTitle} ${shortTranscript}`.trim();
-    const verification = verifyTextLinguisticEnglish(fullText);
-
-    if (!verification.isEnglish) {
-      playSound('click');
-      alert(isFr 
-        ? `🛡️ Agent IA English Sentinel : Publication refusée !\n\n${verification.reasonFr}\n\nEnglish Booster est un espace 100% anglophone. Veuillez enregistrer et titrer votre vidéo exclusivement en anglais.`
-        : `🛡️ English Sentinel AI : Publication blocked!\n\n${verification.reason}\n\nEnglish Booster strictly requires all partner videos to be 100% in English.`);
-      return;
-    }
-
-    setUploading(true);
-    playSound('click');
-
-    try {
-      let finalMediaUrl: string | null = null;
-
-      try {
-        const fileExt = videoFile.name.split('.').pop() || 'mp4';
-        const filePath = `shorts/${user.id}/${Date.now()}.${fileExt}`;
-        const { data: uploadData } = await supabase.storage
-          .from('videos')
-          .upload(filePath, videoFile, { upsert: true });
-
-        if (uploadData) {
-          const { data: { publicUrl } } = supabase.storage
-            .from('videos')
-            .getPublicUrl(filePath);
-          finalMediaUrl = publicUrl;
-        }
-      } catch {
-        finalMediaUrl = videoPreviewUrl;
-      }
-
-      const certId = verification.certificateId || `EB-AI-${Date.now()}`;
-      // Encode structured content: title:::transcript:::category:::level:::ai_verified:::certificateId
-      const storedContent = `${shortTitle.trim()}:::${shortTranscript.trim()}:::${shortCategory}:::${shortLevel}:::ai_verified:::${certId}`;
-
-      const { data: newPost } = await supabase
-        .from('posts')
-        .insert({
-          user_id: user.id,
-          category: 'short',
-          content: storedContent,
-          media_type: 'video',
-          media_url: finalMediaUrl || videoPreviewUrl,
-          likes_count: 0,
-          comments_count: 0,
-        })
-        .select()
-        .single();
-
-      const newShortItem: ShortVideoItem = {
-        id: newPost?.id || `short-${Date.now()}`,
-        title: shortTitle.trim(),
-        speaker: profile.full_name,
-        author_avatar: getUserAvatar(profile.avatar_url, profile.full_name, profile.email),
-        author_flag: profile.flag || '🌐',
-        level: shortLevel,
-        category: shortCategory,
-        video_url: finalMediaUrl || videoPreviewUrl!,
-        image_fallback: getUserAvatar(profile.avatar_url, profile.full_name, profile.email),
-        transcript: shortTranscript.trim(),
-        likes_count: 0,
-        comments_count: 0,
-        user_id: user.id,
-        ai_verified: true,
-        ai_certificate: certId,
-      };
-
-      setShortsList(prev => [newShortItem, ...prev]);
-      setCurrentIndex(0);
-      playSound('success');
-
-      try {
-        confetti({
-          particleCount: 50,
-          spread: 60,
-          origin: { y: 0.7 }
-        });
-      } catch {}
-
-      // Reset form
-      setPublishModalOpen(false);
-      setVideoFile(null);
-      setVideoPreviewUrl(null);
-      setShortTitle('');
-      setShortTranscript('');
-    } catch (err) {
-      console.error('Error publishing short:', err);
-    } finally {
-      setUploading(false);
     }
   };
 
@@ -1114,7 +1163,11 @@ export default function ShortsPage() {
             {/* Close */}
             <button
               type="button"
-              onClick={() => setPublishModalOpen(false)}
+              onClick={() => {
+                setPublishModalOpen(false);
+                setVideoFile(null);
+                setVideoPreviewUrl(null);
+              }}
               className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 cursor-pointer"
               title={isFr ? "Fermer" : "Close"}
             >
@@ -1341,14 +1394,18 @@ export default function ShortsPage() {
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-white/10">
                 <button
                   type="button"
-                  onClick={() => setPublishModalOpen(false)}
+                  onClick={() => {
+                    setPublishModalOpen(false);
+                    setVideoFile(null);
+                    setVideoPreviewUrl(null);
+                  }}
                   className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white cursor-pointer"
                 >
                   {isFr ? 'Annuler' : 'Cancel'}
                 </button>
                 <button
                   type="submit"
-                  disabled={uploading || !videoFile || !shortTitle.trim() || !englishPledged || (aiVerification !== null && !aiVerification.isEnglish)}
+                  disabled={uploading || (!videoFile && !videoPreviewUrl) || !shortTitle.trim() || !englishPledged || (aiVerification !== null && !aiVerification.isEnglish)}
                   className="px-6 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-500 to-teal-400 dark:from-emerald-400 dark:to-teal-400 text-slate-950 shadow-[0_0_20px_rgba(74,222,128,0.3)] hover:scale-105 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-2 cursor-pointer"
                 >
                   {uploading ? (
