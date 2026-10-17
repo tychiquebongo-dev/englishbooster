@@ -31,7 +31,8 @@ export async function broadcastIncomingCall(payload: IncomingCallPayload) {
   if (typeof window === 'undefined') return;
   const supabase = createClient();
   const channelName = `user-notifications-${payload.receiverId}`;
-  const channel = supabase.channel(channelName);
+  const chatChannelName = `chat_${[payload.callerId, payload.receiverId].sort().join('_')}`;
+  const roomChannelName = `call-room-${payload.roomId}`;
 
   // 1. Immediately send native background Web Push notification (wakes phone/device even if offline or app closed)
   try {
@@ -57,40 +58,139 @@ export async function broadcastIncomingCall(payload: IncomingCallPayload) {
     }).catch(() => {});
   } catch {}
 
-  return new Promise<void>((resolve) => {
-    channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        channel.send({
+  // 2. Broadcast immediately to any existing joined channels (e.g. active chat or room)
+  try {
+    const activeChannels = supabase.getChannels();
+    for (const c of activeChannels) {
+      if (
+        c.topic === `realtime:${chatChannelName}` ||
+        c.topic === `realtime:${roomChannelName}` ||
+        c.topic === `realtime:${channelName}`
+      ) {
+        c.send({
           type: 'broadcast',
           event: 'incoming_call',
-          payload: {
-            ...payload,
-            timestamp: Date.now(),
-          },
-        }).then(() => {
-          setTimeout(() => {
-            supabase.removeChannel(channel);
-            resolve();
-          }, 300);
+          payload: { ...payload, timestamp: Date.now() },
+        }).catch(() => {});
+      }
+    }
+  } catch {}
+
+  // 3. Reliable broadcast to receiver's personal notifications channel
+  const sendToPersonalChannel = new Promise<void>((resolve) => {
+    let finished = false;
+    const safeResolve = () => {
+      if (!finished) {
+        finished = true;
+        resolve();
+      }
+    };
+
+    // Failsafe timeout after 2s so caller is never blocked
+    const timeout = setTimeout(safeResolve, 2000);
+
+    try {
+      const channel = supabase.channel(channelName, {
+        config: { broadcast: { self: false, ack: true } },
+      });
+
+      const doSend = () => {
+        channel
+          .send({
+            type: 'broadcast',
+            event: 'incoming_call',
+            payload: {
+              ...payload,
+              timestamp: Date.now(),
+            },
+          })
+          .then(() => {
+            clearTimeout(timeout);
+            safeResolve();
+          })
+          .catch(() => safeResolve());
+      };
+
+      if (channel.state === 'joined') {
+        doSend();
+      } else {
+        channel.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            doSend();
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            safeResolve();
+          }
         });
       }
-    });
-
-    // Also persist call invitation into calls table
-    try {
-      supabase.from('calls').insert({
-        caller_id: payload.callerId,
-        receiver_id: payload.receiverId,
-        receiver_name: payload.callerName,
-        room_id: payload.roomId,
-        status: 'calling',
-        duration_seconds: 0,
-        fluency_score: 85,
-        xp_earned: 0,
-        topic: payload.isVideo ? 'Live Video Conversation' : 'Live Voice Call',
-      }).then(() => {});
-    } catch {}
+    } catch {
+      safeResolve();
+    }
   });
+
+  // 4. Also broadcast over chat conversation channel in case partner is inside chat
+  try {
+    const chatCh = supabase.channel(chatChannelName, {
+      config: { broadcast: { self: false } },
+    });
+    if (chatCh.state === 'joined') {
+      chatCh.send({
+        type: 'broadcast',
+        event: 'incoming_call',
+        payload: { ...payload, timestamp: Date.now() },
+      }).catch(() => {});
+    } else {
+      chatCh.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          chatCh.send({
+            type: 'broadcast',
+            event: 'incoming_call',
+            payload: { ...payload, timestamp: Date.now() },
+          }).catch(() => {});
+        }
+      });
+    }
+  } catch {}
+
+  // 5. Also broadcast over call room channel
+  try {
+    const roomCh = supabase.channel(roomChannelName, {
+      config: { broadcast: { self: false } },
+    });
+    if (roomCh.state === 'joined') {
+      roomCh.send({
+        type: 'broadcast',
+        event: 'incoming_call',
+        payload: { ...payload, timestamp: Date.now() },
+      }).catch(() => {});
+    } else {
+      roomCh.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          roomCh.send({
+            type: 'broadcast',
+            event: 'incoming_call',
+            payload: { ...payload, timestamp: Date.now() },
+          }).catch(() => {});
+        }
+      });
+    }
+  } catch {}
+
+  // 6. Record call invitation in database
+  try {
+    supabase.from('calls').insert({
+      caller_id: payload.callerId,
+      receiver_id: payload.receiverId,
+      receiver_name: payload.callerName,
+      room_id: payload.roomId,
+      status: 'calling',
+      duration_seconds: 0,
+      fluency_score: 85,
+      xp_earned: 0,
+      topic: payload.isVideo ? 'Live Video Conversation' : 'Live Voice Call',
+    }).then(() => {});
+  } catch {}
+
+  await sendToPersonalChannel;
 }
 
 /**

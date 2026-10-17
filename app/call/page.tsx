@@ -101,6 +101,15 @@ function CallContent() {
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const hasOfferedRef = useRef<boolean>(false);
 
+  const isFrRef = useRef(isFr);
+  isFrRef.current = isFr;
+
+  const playSoundRef = useRef(playSound);
+  playSoundRef.current = playSound;
+
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+
   // Stop all media tracks helper
   const stopAllMedia = useCallback(() => {
     if (streamRef.current) {
@@ -115,14 +124,20 @@ function CallContent() {
     }
   }, []);
 
+  const stopAllMediaRef = useRef(stopAllMedia);
+  stopAllMediaRef.current = stopAllMedia;
+
   // Handle remote partner hanging up or disconnecting
   const handleRemoteHangup = useCallback(() => {
-    playSound('chime');
-    setRemoteEndedNotice(isFr ? 'Votre interlocuteur a raccroché ou a mis fin à l\'appel.' : 'Your partner has ended the call.');
+    playSoundRef.current('chime');
+    setRemoteEndedNotice(isFrRef.current ? 'Votre interlocuteur a raccroché ou a mis fin à l\'appel.' : 'Your partner has ended the call.');
     stopAllMedia();
     setCallStatus('ended');
     setCallEnded(true);
-  }, [isFr, playSound, stopAllMedia]);
+  }, [stopAllMedia]);
+
+  const handleRemoteHangupRef = useRef(handleRemoteHangup);
+  handleRemoteHangupRef.current = handleRemoteHangup;
 
   // 1. Fetch partner profile from database
   useEffect(() => {
@@ -149,15 +164,15 @@ function CallContent() {
     if (callStatus !== 'calling') return;
 
     // Caller hears dial tone while ringing
-    playSound('call');
+    playSoundRef.current('call');
     const ringInterval = setInterval(() => {
-      playSound('call');
+      playSoundRef.current('call');
     }, 2800);
 
     return () => clearInterval(ringInterval);
-  }, [callStatus, playSound]);
+  }, [callStatus]);
 
-  // 2b. Auto-timeout after 30s ringing if partner does not answer (e.g. offline partner)
+  // 2b. Auto-timeout after 45s ringing if partner does not answer (e.g. offline partner)
   useEffect(() => {
     if (callStatus !== 'calling' || !isCaller) return;
 
@@ -167,8 +182,8 @@ function CallContent() {
           try {
             await recordMissedCall({
               callerId: user.id,
-              callerName: profile?.full_name || 'English Learner',
-              callerAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
+              callerName: profileRef.current?.full_name || 'English Learner',
+              callerAvatar: getUserAvatar(profileRef.current?.avatar_url, profileRef.current?.full_name, user.email),
               receiverId: partnerId,
               isVideo: isVideoParam,
               roomId,
@@ -180,16 +195,16 @@ function CallContent() {
         stopAllMedia();
         setCallStatus('ended');
         setRemoteEndedNotice(
-          isFr 
+          isFrRef.current 
             ? "Aucune réponse. Le partenaire est peut-être hors ligne. Une notification d'appel manqué lui a été transmise." 
             : "No response. Partner might be offline. A missed call notification was sent."
         );
         setCallEnded(true);
       }
-    }, 28000);
+    }, 45000);
 
     return () => clearTimeout(ringTimeout);
-  }, [callStatus, isCaller, partnerId, user?.id, profile, isVideoParam, roomId, isFr, stopAllMedia]);
+  }, [callStatus, isCaller, partnerId, user?.id, user?.email, isVideoParam, roomId, stopAllMedia]);
 
   // 3. Call duration timer: strictly only ticks when call is connected
   useEffect(() => {
@@ -285,30 +300,70 @@ function CallContent() {
         }
       };
 
-      // Realtime peer connection state listener
+      let disconnectGraceTimeout: NodeJS.Timeout | null = null;
+
+      // Realtime peer connection state listener with automatic recovery
       pc.onconnectionstatechange = () => {
         console.log('RTCPeerConnection state:', pc.connectionState);
         if (pc.connectionState === 'connected') {
+          if (disconnectGraceTimeout) {
+            clearTimeout(disconnectGraceTimeout);
+            disconnectGraceTimeout = null;
+          }
           setHasRemoteStream(true);
           setCallStatus('connected');
-        } else if (
-          pc.connectionState === 'disconnected' || 
-          pc.connectionState === 'failed' || 
-          pc.connectionState === 'closed'
-        ) {
-          handleRemoteHangup();
+        } else if (pc.connectionState === 'failed') {
+          try {
+            if (typeof pc.restartIce === 'function') pc.restartIce();
+          } catch {}
+          if (!disconnectGraceTimeout) {
+            disconnectGraceTimeout = setTimeout(() => {
+              if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                handleRemoteHangupRef.current();
+              }
+            }, 15000);
+          }
+        } else if (pc.connectionState === 'closed') {
+          handleRemoteHangupRef.current();
         }
       };
 
-      // ICE connection state listener
+      // ICE connection state listener with 20s recovery grace period & transparent ICE restart for UNLIMITED call duration
       pc.oniceconnectionstatechange = () => {
         console.log('RTCPeerConnection ICE state:', pc.iceConnectionState);
-        if (
-          pc.iceConnectionState === 'disconnected' || 
-          pc.iceConnectionState === 'failed' || 
-          pc.iceConnectionState === 'closed'
-        ) {
-          handleRemoteHangup();
+        if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+          if (disconnectGraceTimeout) {
+            clearTimeout(disconnectGraceTimeout);
+            disconnectGraceTimeout = null;
+          }
+          setHasRemoteStream(true);
+          setCallStatus('connected');
+        } else if (pc.iceConnectionState === 'disconnected') {
+          console.warn('ICE state temporarily disconnected. Preserving call with 20s grace period for NAT refresh.');
+          try {
+            if (typeof pc.restartIce === 'function') pc.restartIce();
+          } catch {}
+          if (!disconnectGraceTimeout) {
+            disconnectGraceTimeout = setTimeout(() => {
+              if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+                console.log('ICE recovery timed out after 20s. Terminating call.');
+                handleRemoteHangupRef.current();
+              }
+            }, 20000);
+          }
+        } else if (pc.iceConnectionState === 'failed') {
+          try {
+            if (typeof pc.restartIce === 'function') pc.restartIce();
+          } catch {}
+          if (!disconnectGraceTimeout) {
+            disconnectGraceTimeout = setTimeout(() => {
+              if (pc.iceConnectionState === 'failed') {
+                handleRemoteHangupRef.current();
+              }
+            }, 15000);
+          }
+        } else if (pc.iceConnectionState === 'closed') {
+          handleRemoteHangupRef.current();
         }
       };
 
@@ -319,10 +374,14 @@ function CallContent() {
         if (!currentPC) return;
 
         switch (payload.type) {
+          case 'ping':
+            // Keepalive ping to prevent NAT timeout, no action required
+            break;
+
           case 'hangup':
           case 'call_ended':
             console.log('Received hangup signal via WebRTC signaling');
-            handleRemoteHangup();
+            handleRemoteHangupRef.current();
             break;
 
           case 'partner_ready':
@@ -468,16 +527,16 @@ function CallContent() {
       userChannel
         .on('broadcast', { event: 'call_ended' }, () => {
           console.log('User personal notification call_ended received');
-          handleRemoteHangup();
+          handleRemoteHangupRef.current();
         })
         .on('broadcast', { event: 'webrtc_signal' }, ({ payload }: any) => {
           if (payload?.type === 'hangup') {
             console.log('User personal notification hangup signal received');
-            handleRemoteHangup();
+            handleRemoteHangupRef.current();
           }
         })
         .on('broadcast', { event: 'call_declined' }, () => {
-          playSound('chime');
+          playSoundRef.current('chime');
           stopAllMedia();
           setCallStatus('declined');
         })
@@ -486,20 +545,24 @@ function CallContent() {
 
     initializeCall();
 
-    // Heartbeat ping every 2s until connected so late-joining partner receives partner_ready
-    const readyInterval = setInterval(() => {
-      if (channelRef.current && pcRef.current && pcRef.current.connectionState !== 'connected') {
+    // Continuous keepalive ping: sends partner_ready while connecting, and ping while connected
+    // This keeps UDP NAT pinholes open indefinitely and prevents Realtime WebSocket timeouts for unlimited calls!
+    const keepaliveInterval = setInterval(() => {
+      if (channelRef.current && pcRef.current) {
         channelRef.current.send({
           type: 'broadcast',
           event: 'webrtc_signal',
-          payload: { type: 'partner_ready', from: user.id },
+          payload: { 
+            type: pcRef.current.connectionState === 'connected' ? 'ping' : 'partner_ready', 
+            from: user.id 
+          },
         });
       }
-    }, 2000);
+    }, 4000);
 
     return () => {
       isMounted = false;
-      clearInterval(readyInterval);
+      clearInterval(keepaliveInterval);
 
       // Notify partner immediately if user leaves call room
       if (channelRef.current) {
@@ -528,7 +591,7 @@ function CallContent() {
         supabase.removeChannel(userChannelRef.current);
       }
     };
-  }, [user?.id, roomId, isCaller, partnerId, isVideoParam, profile, isFr, playSound, stopAllMedia, handleRemoteHangup, supabase]);
+  }, [user?.id, roomId, isCaller, partnerId, isVideoParam]);
 
   // Window beforeunload listener so tab close immediately terminates call on partner device
   useEffect(() => {
@@ -738,8 +801,12 @@ function CallContent() {
   };
 
   const formatTimer = (totalSec: number) => {
-    const mins = Math.floor(totalSec / 60);
+    const hours = Math.floor(totalSec / 3600);
+    const mins = Math.floor((totalSec % 3600) / 60);
     const secs = totalSec % 60;
+    if (hours > 0) {
+      return `${hours}:${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    }
     return `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
@@ -758,6 +825,9 @@ function CallContent() {
               <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-emerald-500 animate-ping" />
               <span className="font-mono text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white">
                 {formatTimer(durationSeconds)}
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-black text-[10px] tracking-wider uppercase inline-flex items-center gap-1 shadow-sm">
+                <span>♾️</span> <span>{isFr ? 'Illimité' : 'Unlimited'}</span>
               </span>
               <span className="text-slate-500 dark:text-slate-400 text-xs hidden sm:inline">
                 • {isFr ? 'Session Live avec' : 'Live Session with'} <strong className="text-slate-900 dark:text-white">{partnerName}</strong>

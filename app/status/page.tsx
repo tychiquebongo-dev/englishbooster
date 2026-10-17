@@ -26,9 +26,25 @@ import {
   Volume2,
   Trash2,
   Send,
-  ShieldCheck
+  ShieldCheck,
+  Clock
 } from 'lucide-react';
 import { verifyTextLinguisticEnglish } from '@/lib/aiVideoModeration';
+
+function getStatusRemainingTime(createdAt: string, isFr: boolean): string {
+  try {
+    const elapsed = Date.now() - new Date(createdAt).getTime();
+    const remainingMs = Math.max(0, 24 * 60 * 60 * 1000 - elapsed);
+    const hours = Math.floor(remainingMs / (60 * 60 * 1000));
+    const mins = Math.floor((remainingMs % (60 * 60 * 1000)) / (60 * 1000));
+    if (hours > 0) {
+      return isFr ? `${hours}h rest.` : `${hours}h left`;
+    }
+    return isFr ? `${mins}m rest.` : `${mins}m left`;
+  } catch {
+    return isFr ? '24h' : '24h';
+  }
+}
 
 export default function StatusSpacePage() {
   const { user, profile, playSound, isAdmin } = useAuth();
@@ -48,16 +64,25 @@ export default function StatusSpacePage() {
   useEffect(() => {
     const fetchStatuses = async () => {
       try {
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
         const { data: postsData } = await supabase
           .from('posts')
           .select('*')
           .eq('category', 'status')
+          .gte('created_at', twentyFourHoursAgo)
           .order('created_at', { ascending: false })
-          .limit(30);
+          .limit(50);
 
-        if (postsData && postsData.length > 0) {
+        // Strict 24h safety filter client-side
+        const now = Date.now();
+        const validPosts = (postsData || []).filter(p => {
+          if (!p.created_at) return true;
+          return (now - new Date(p.created_at).getTime()) <= 24 * 60 * 60 * 1000;
+        });
+
+        if (validPosts && validPosts.length > 0) {
           // Batch fetch profiles in a single query (0ms N+1 waterfall)
-          const userIds = Array.from(new Set(postsData.map(p => p.user_id).filter(Boolean)));
+          const userIds = Array.from(new Set(validPosts.map(p => p.user_id).filter(Boolean)));
           let authorsMap: Record<string, any> = {};
           if (userIds.length > 0) {
             const { data: authors } = await supabase
@@ -225,8 +250,8 @@ export default function StatusSpacePage() {
       {/* Header Banner */}
       <div className="text-center max-w-3xl mx-auto space-y-3">
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-bold uppercase tracking-wider">
-          <Radio className="w-3.5 h-3.5 animate-pulse text-rose-400" />
-          <span>{isFr ? 'Espace Statuts & Stories Anglais' : 'English Status & Stories Space'}</span>
+          <Clock className="w-3.5 h-3.5 text-rose-400" />
+          <span>{isFr ? 'Statuts & Stories Éphémères (24 Heures)' : '24-Hour Ephemeral Stories & Statuses'}</span>
         </div>
 
         <h1 className="text-3xl sm:text-5xl font-black text-slate-900 dark:text-white tracking-tight">
@@ -429,9 +454,13 @@ export default function StatusSpacePage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400">
                     {status.topic_tag}
+                  </span>
+                  <span className="text-[10px] font-mono font-bold text-amber-500 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                    <Clock className="w-3 h-3 text-amber-400" />
+                    {getStatusRemainingTime(status.created_at, isFr)}
                   </span>
                   {(user?.id === status.user_id || isAdmin) && (
                     <button

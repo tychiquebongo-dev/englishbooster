@@ -23,7 +23,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Trash2,
-  ShieldCheck
+  ShieldCheck,
+  Clock
 } from 'lucide-react';
 import { verifyTextLinguisticEnglish } from '@/lib/aiVideoModeration';
 
@@ -60,6 +61,21 @@ const TOPIC_TAGS = [
   '#VocabularyBoost'
 ];
 
+function getStatusRemainingTime(createdAt: string, isFr: boolean): string {
+  try {
+    const elapsed = Date.now() - new Date(createdAt).getTime();
+    const remainingMs = Math.max(0, 24 * 60 * 60 * 1000 - elapsed);
+    const hours = Math.floor(remainingMs / (60 * 60 * 1000));
+    const mins = Math.floor((remainingMs % (60 * 60 * 1000)) / (60 * 1000));
+    if (hours > 0) {
+      return isFr ? `${hours}h rest.` : `${hours}h left`;
+    }
+    return isFr ? `${mins}m rest.` : `${mins}m left`;
+  } catch {
+    return isFr ? '24h' : '24h';
+  }
+}
+
 export default function EnglishStatusTray() {
   const { user, profile, playSound, isAdmin } = useAuth();
   const { isFr } = useTranslation();
@@ -91,19 +107,28 @@ export default function EnglishStatusTray() {
   const videoInputRef = useRef<HTMLInputElement>(null);
   const videoPlayerRef = useRef<HTMLVideoElement | null>(null);
 
-  // Fetch statuses from Supabase posts table
+  // Fetch statuses from Supabase posts table strictly within last 24h
   useEffect(() => {
     const fetchStatuses = async () => {
       try {
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
         const { data: postsData } = await supabase
           .from('posts')
           .select('*')
           .eq('category', 'status')
+          .gte('created_at', twentyFourHoursAgo)
           .order('created_at', { ascending: false })
-          .limit(20);
+          .limit(50);
 
-        if (postsData && postsData.length > 0) {
-          const authorIds = Array.from(new Set(postsData.map(p => p.user_id).filter(Boolean)));
+        // Strict 24h filter client-side as well
+        const now = Date.now();
+        const validPosts = (postsData || []).filter(p => {
+          if (!p.created_at) return true;
+          return (now - new Date(p.created_at).getTime()) <= 24 * 60 * 60 * 1000;
+        });
+
+        if (validPosts && validPosts.length > 0) {
+          const authorIds = Array.from(new Set(validPosts.map(p => p.user_id).filter(Boolean)));
           let authorsMap: Record<string, any> = {};
           if (authorIds.length > 0) {
             const { data: authors } = await supabase
@@ -115,7 +140,7 @@ export default function EnglishStatusTray() {
             }
           }
 
-          const enriched: EnglishStatus[] = postsData.map((p, idx) => {
+          const enriched: EnglishStatus[] = validPosts.map((p, idx) => {
             const author = authorsMap[p.user_id];
             const parts = p.content.split(':::');
             const text = parts[0] || p.content;
@@ -408,8 +433,9 @@ export default function EnglishStatusTray() {
             <span className="text-base">🇬🇧</span>
           </h2>
         </div>
-        <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-          24h Ephemeral
+        <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+          <Clock className="w-3 h-3 text-emerald-400" />
+          <span>{isFr ? 'Stories 24h Éphémères' : '24h Stories'}</span>
         </span>
       </div>
 
@@ -757,9 +783,13 @@ export default function EnglishStatusTray() {
                     <span className="text-sm font-black">{activeStatus.author_name}</span>
                     <span className="text-xs">{activeStatus.author_flag}</span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[10px] font-bold text-emerald-400">{activeStatus.topic_tag}</span>
                     <span className="text-[10px] text-slate-400 font-semibold">{activeStatus.author_level}</span>
+                    <span className="text-[10px] font-mono font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                      <Clock className="w-3 h-3 text-amber-400" />
+                      {getStatusRemainingTime(activeStatus.created_at, isFr)}
+                    </span>
                   </div>
                 </div>
               </div>

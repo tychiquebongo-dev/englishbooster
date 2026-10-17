@@ -243,6 +243,15 @@ function RealConversationContent() {
   const [callActive, setCallActive] = useState(false);
   const [callIsVideo, setCallIsVideo] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
+  const formatChatCallTimer = (sec: number) => {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (h > 0) {
+      return `${h}:${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+    }
+    return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+  };
   const [callStatus, setCallStatus] = useState<'calling' | 'connected' | 'ended'>('calling');
   const [isCallMuted, setIsCallMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
@@ -855,6 +864,12 @@ function RealConversationContent() {
           }
         }
       )
+      .on('broadcast', { event: 'incoming_call' }, ({ payload }: { payload: any }) => {
+        if (!payload || payload.receiverId !== user.id) return;
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('eb_incoming_call', { detail: payload }));
+        }
+      })
       .on(
         'postgres_changes',
         {
@@ -1014,7 +1029,7 @@ function RealConversationContent() {
   };
 
   // Start Outgoing Remote Call by signaling partner immediately (even if offline) and entering call room
-  const handleStartRemoteCall = (videoMode: boolean) => {
+  const handleStartRemoteCall = async (videoMode: boolean) => {
     if (!activePartner || !user?.id) {
       if (!user?.id) alert("Please sign in to make calls.");
       return;
@@ -1024,9 +1039,32 @@ function RealConversationContent() {
     playSound?.('call');
     const roomId = `room_${[user.id, activePartner.id].sort().join('_')}_${Date.now()}`;
 
-    // Immediately broadcast incoming call & send high-priority Web Push to wake partner's device even if offline / app closed
+    // 1. Send immediate incoming_call on active chat channel if connected
+    if (chatChannelRef.current) {
+      try {
+        chatChannelRef.current.send({
+          type: 'broadcast',
+          event: 'incoming_call',
+          payload: {
+            callerId: user.id,
+            callerName: profile?.full_name || 'English Learner',
+            callerAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
+            callerFlag: profile?.flag || '🌐',
+            callerLevel: profile?.current_level || 'B2',
+            receiverId: activePartner.id,
+            roomId: roomId,
+            isVideo: videoMode,
+            timestamp: Date.now(),
+          },
+        });
+      } catch (err) {
+        console.warn('Error broadcasting direct chat incoming call:', err);
+      }
+    }
+
+    // 2. Broadcast incoming call to partner's personal notification channel & Web Push
     try {
-      broadcastIncomingCall({
+      await broadcastIncomingCall({
         callerId: user.id,
         callerName: profile?.full_name || 'English Learner',
         callerAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
@@ -1040,6 +1078,7 @@ function RealConversationContent() {
       console.warn('Error broadcasting incoming call:', err);
     }
 
+    // 3. Seamlessly navigate to live call room
     router.push(`/call?partnerId=${activePartner.id}&partnerName=${encodeURIComponent(activePartner.name)}&video=${videoMode}&roomId=${roomId}`);
   };
 
@@ -1824,9 +1863,14 @@ function RealConversationContent() {
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-2 mt-5">
-                    <span className="text-xl sm:text-2xl font-mono font-black text-white tracking-widest">
-                      {Math.floor(callDuration / 60)}:{callDuration % 60 < 10 ? '0' : ''}{callDuration % 60}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl sm:text-2xl font-mono font-black text-white tracking-widest">
+                        {formatChatCallTimer(callDuration)}
+                      </span>
+                      <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                        ♾️ {isFr ? 'Illimité' : 'Unlimited'}
+                      </span>
+                    </div>
                     {/* Live Equalizer sound bars */}
                     <div className="flex items-center gap-1.5 h-6">
                       {[10, 22, 16, 26, 14, 28, 18, 12].map((h, idx) => (
@@ -1918,8 +1962,11 @@ function RealConversationContent() {
                         {remoteStream ? 'HD Video Live' : 'Connecting STUN...'}
                       </span>
                     </h3>
-                    <p className="text-xs font-mono font-bold text-cyan-400">
-                      {Math.floor(callDuration / 60)}:{callDuration % 60 < 10 ? '0' : ''}{callDuration % 60}
+                    <p className="text-xs font-mono font-bold text-cyan-400 flex items-center gap-1.5">
+                      <span>{formatChatCallTimer(callDuration)}</span>
+                      <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/20 px-1.5 py-0.2 rounded border border-emerald-500/30">
+                        ♾️ {isFr ? 'Illimité' : 'Unlimited'}
+                      </span>
                     </p>
                   </div>
                 </div>

@@ -275,60 +275,76 @@ export default function GlobalCallNotifier() {
   const playSoundRef = useRef(playSound);
   playSoundRef.current = playSound;
 
+  // Centralized handler to trigger incoming call modal & notifications
+  const handleTriggerIncomingCall = (payload: IncomingCallPayload) => {
+    // If current user is already in a call with this roomId, ignore
+    if (pathnameRef.current === '/call') return;
+    if (!payload || (payload.receiverId && user?.id && payload.receiverId !== user.id)) return;
+
+    incomingCallRef.current = payload;
+    setIncomingCall(payload);
+    playSoundRef.current('call');
+    triggerVibration([500, 250, 500, 250, 1000]);
+
+    // 1. Dynamic flashing notification in partner's browser bar (onglet & taskbar)
+    notifyBrowserBar({
+      type: payload.isVideo ? 'video_call' : 'voice_call',
+      senderName: payload.callerName,
+      durationMs: 45000,
+    });
+
+    // 2. Native HTML5 desktop / mobile notification
+    showPhoneCallNotification(payload);
+
+    // Loop ringtone sound and phone vibration every 2.8s
+    if (ringIntervalRef.current) clearInterval(ringIntervalRef.current);
+    ringIntervalRef.current = setInterval(() => {
+      playSoundRef.current('call');
+      triggerVibration([500, 250, 500, 250, 1000]);
+    }, 2800);
+
+    // Auto dismiss after 45s as missed call if not answered
+    if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current);
+    autoDismissTimerRef.current = setTimeout(() => {
+      stopRinging();
+      const activeCall = incomingCallRef.current;
+      incomingCallRef.current = null;
+      setIncomingCall(null);
+
+      if (activeCall && user?.id) {
+        const missedText = activeCall.isVideo 
+          ? (isFrRef.current ? '📹 Appel vidéo manqué' : '📹 Missed video call') 
+          : (isFrRef.current ? '📞 Appel vocal manqué' : '📞 Missed voice call');
+        showPhoneMessageNotification({
+          senderId: activeCall.callerId,
+          senderName: activeCall.callerName,
+          senderAvatar: activeCall.callerAvatar,
+          receiverId: user.id,
+          text: `${missedText} (${isFrRef.current ? 'Appuyez pour rappeler' : 'Tap to call back'})`,
+        });
+      }
+    }, 45000);
+  };
+
   useEffect(() => {
     if (!user?.id) return;
 
+    // Listen to local in-app redundant events (e.g. from chat page)
+    const handleCustomIncomingCall = (e: any) => {
+      if (e.detail) {
+        handleTriggerIncomingCall(e.detail);
+      }
+    };
+    window.addEventListener('eb_incoming_call', handleCustomIncomingCall);
+
     const channelName = `user-notifications-${user.id}`;
-    const channel = supabase.channel(channelName);
+    const channel = supabase.channel(channelName, {
+      config: { broadcast: { self: false } },
+    });
 
     channel
       .on('broadcast', { event: 'incoming_call' }, ({ payload }: { payload: IncomingCallPayload }) => {
-        // If current user is already in a call with this roomId, ignore
-        if (pathnameRef.current === '/call') return;
-
-        incomingCallRef.current = payload;
-        setIncomingCall(payload);
-        playSoundRef.current('call');
-        triggerVibration([500, 250, 500, 250, 1000]);
-
-        // 1. Dynamic flashing notification in partner's browser bar (onglet & taskbar)
-        notifyBrowserBar({
-          type: payload.isVideo ? 'video_call' : 'voice_call',
-          senderName: payload.callerName,
-          durationMs: 32000,
-        });
-
-        // 2. Native HTML5 desktop / mobile notification
-        showPhoneCallNotification(payload);
-
-        // Loop ringtone sound and phone vibration every 2.8s
-        if (ringIntervalRef.current) clearInterval(ringIntervalRef.current);
-        ringIntervalRef.current = setInterval(() => {
-          playSoundRef.current('call');
-          triggerVibration([500, 250, 500, 250, 1000]);
-        }, 2800);
-
-        // Auto dismiss after 32s as missed call
-        if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current);
-        autoDismissTimerRef.current = setTimeout(() => {
-          stopRinging();
-          const activeCall = incomingCallRef.current;
-          incomingCallRef.current = null;
-          setIncomingCall(null);
-
-          if (activeCall && user?.id) {
-            const missedText = activeCall.isVideo 
-              ? (isFrRef.current ? '📹 Appel vidéo manqué' : '📹 Missed video call') 
-              : (isFrRef.current ? '📞 Appel vocal manqué' : '📞 Missed voice call');
-            showPhoneMessageNotification({
-              senderId: activeCall.callerId,
-              senderName: activeCall.callerName,
-              senderAvatar: activeCall.callerAvatar,
-              receiverId: user.id,
-              text: `${missedText} (${isFrRef.current ? 'Appuyez pour rappeler' : 'Tap to call back'})`,
-            });
-          }
-        }, 32000);
+        handleTriggerIncomingCall(payload);
       })
       .on('broadcast', { event: 'call_ended' }, () => {
         stopRinging();
@@ -439,6 +455,7 @@ export default function GlobalCallNotifier() {
 
     return () => {
       stopRinging();
+      window.removeEventListener('eb_incoming_call', handleCustomIncomingCall);
       supabase.removeChannel(channel);
     };
   }, [user?.id, profile?.full_name, supabase]);

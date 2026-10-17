@@ -169,11 +169,13 @@ export default function HeroInteractiveHub() {
           );
         }
 
-        // Query real member posts for status space
+        // Query real member posts for status space within last 24h
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
         const { data: posts } = await supabase
           .from('posts')
           .select('id, content, created_at, user_id, likes_count')
           .eq('category', 'status')
+          .gte('created_at', twentyFourHoursAgo)
           .order('created_at', { ascending: false })
           .limit(1);
 
