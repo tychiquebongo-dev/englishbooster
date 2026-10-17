@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useTranslation } from '@/lib/i18n';
 import { getUserAvatar } from '@/lib/avatarHelper';
 import { isRealPartnerProfile } from '@/lib/partnerHelper';
+import { EMMA_AI_PARTNER } from '@/lib/aiAgent';
 import type { Database } from '@/lib/database.types';
 import { 
   Users, 
@@ -46,6 +47,7 @@ interface DisplayPartner {
   rating?: number;
   reviews_count?: number;
   streak?: number;
+  is_ai?: boolean;
 }
 
 export interface RegisteredMemberShort {
@@ -126,9 +128,49 @@ export default function PartnersPage() {
             };
           });
 
-          setPartners(realPartners);
+          // Create Emma AI Partner card (pinned 24/7 speaking partner & coach)
+          const emmaPartner: DisplayPartner = {
+            id: EMMA_AI_PARTNER.id,
+            name: EMMA_AI_PARTNER.name,
+            avatar: EMMA_AI_PARTNER.avatar,
+            country: EMMA_AI_PARTNER.country,
+            flag: EMMA_AI_PARTNER.flag,
+            level: EMMA_AI_PARTNER.level,
+            target_level: EMMA_AI_PARTNER.target_level,
+            bio: isFr 
+              ? "Bonjour ! Je suis Emma, votre partenaire & coach IA en anglais disponible 24h/24. Discutons en direct, développons votre fluidité orale, corrigeons vos erreurs et pratiquons la conversation sans stress !"
+              : EMMA_AI_PARTNER.bio,
+            specialty: isFr ? '🤖 Coach IA de Conversation • 24/7' : EMMA_AI_PARTNER.specialty,
+            interests: EMMA_AI_PARTNER.interests,
+            is_online: true,
+            rating: 4.99,
+            reviews_count: 520,
+            streak: 365,
+            is_ai: true,
+          };
+
+          setPartners([emmaPartner, ...realPartners]);
         } else {
-          setPartners([]);
+          const emmaPartner: DisplayPartner = {
+            id: EMMA_AI_PARTNER.id,
+            name: EMMA_AI_PARTNER.name,
+            avatar: EMMA_AI_PARTNER.avatar,
+            country: EMMA_AI_PARTNER.country,
+            flag: EMMA_AI_PARTNER.flag,
+            level: EMMA_AI_PARTNER.level,
+            target_level: EMMA_AI_PARTNER.target_level,
+            bio: isFr 
+              ? "Bonjour ! Je suis Emma, votre partenaire & coach IA en anglais disponible 24h/24. Discutons en direct, développons votre fluidité orale, corrigeons vos erreurs et pratiquons la conversation sans stress !"
+              : EMMA_AI_PARTNER.bio,
+            specialty: isFr ? '🤖 Coach IA de Conversation • 24/7' : EMMA_AI_PARTNER.specialty,
+            interests: EMMA_AI_PARTNER.interests,
+            is_online: true,
+            rating: 4.99,
+            reviews_count: 520,
+            streak: 365,
+            is_ai: true,
+          };
+          setPartners([emmaPartner]);
         }
 
         if (shortsData && shortsData.length > 0) {
@@ -183,6 +225,7 @@ export default function PartnersPage() {
 
   // Compatibility score calculation based on user level and interests
   const calculateMatch = (partner: DisplayPartner) => {
+    if (partner.is_ai) return 100;
     let score = 75;
     const userLevel = profile?.current_level || 'B1';
     const levels = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
@@ -200,9 +243,9 @@ export default function PartnersPage() {
     return Math.min(99, Math.max(78, score));
   };
 
-  // Filter partners: if current user is logged in, hide self from partners list
+  // Filter partners: keep Emma AI always and hide self from partners list
   const availablePartners = useMemo(() => {
-    return user ? partners.filter(p => p.id !== user.id) : partners;
+    return user ? partners.filter(p => p.is_ai || p.id !== user.id) : partners;
   }, [user, partners]);
 
   const onlineCount = useMemo(() => availablePartners.filter(p => p.is_online).length, [availablePartners]);
@@ -216,8 +259,9 @@ export default function PartnersPage() {
         p.country.toLowerCase().includes(q) ||
         p.interests.some(i => i.toLowerCase().includes(q));
 
-      const matchesLevel = selectedLevel === 'ALL' || p.level === selectedLevel;
-      const matchesInterest = selectedInterest === 'ALL' || p.interests.includes(selectedInterest);
+      // Emma AI speaks with learners of ALL CEFR levels
+      const matchesLevel = selectedLevel === 'ALL' || p.is_ai || p.level === selectedLevel;
+      const matchesInterest = selectedInterest === 'ALL' || p.is_ai || p.interests.includes(selectedInterest);
 
       const matchesStatus = statusFilter === 'ALL' || 
         (statusFilter === 'ONLINE' && p.is_online) || 
@@ -226,8 +270,10 @@ export default function PartnersPage() {
       return matchesSearch && matchesLevel && matchesInterest && matchesStatus;
     });
 
-    // Sort: Online partners first, then by name
+    // Sort: Emma AI always first, then Online partners, then alphabetical
     list.sort((a, b) => {
+      if (a.is_ai && !b.is_ai) return -1;
+      if (!a.is_ai && b.is_ai) return 1;
       if (a.is_online && !b.is_online) return -1;
       if (!a.is_online && b.is_online) return 1;
       return a.name.localeCompare(b.name);
@@ -596,10 +642,17 @@ export default function PartnersPage() {
                       
                       {/* Top Bar with Match Score */}
                       <div className="flex items-center justify-between mb-4">
-                        <span className="flex items-center gap-1 text-[11px] font-extrabold uppercase px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300">
-                          <Sparkles className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                          <span>{matchScore}% {isFr ? 'Match IA' : 'AI Match'}</span>
-                        </span>
+                        {partner.is_ai ? (
+                          <span className="flex items-center gap-1.5 text-[11px] font-black uppercase px-3 py-1 rounded-full bg-gradient-to-r from-violet-500/20 via-fuchsia-500/20 to-cyan-500/20 border border-violet-500/40 text-violet-700 dark:text-violet-300 shadow-sm">
+                            <Sparkles className="w-3.5 h-3.5 text-violet-500 animate-spin" />
+                            <span>🤖 {isFr ? 'AGENT IA COACH • 24/7' : 'AI COACH AGENT • 24/7'}</span>
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 text-[11px] font-extrabold uppercase px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300">
+                            <Sparkles className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                            <span>{matchScore}% {isFr ? 'Match IA' : 'AI Match'}</span>
+                          </span>
+                        )}
 
                         <div className="flex items-center gap-1.5">
                           {partnerShortsCount > 0 && (
@@ -629,14 +682,20 @@ export default function PartnersPage() {
                             src={partner.avatar}
                             alt={partner.name}
                             className={`w-16 h-16 rounded-2xl object-cover transition-all shadow-md ${
-                              partner.is_online 
-                                ? 'ring-2 ring-emerald-500/80 group-hover:ring-emerald-400' 
-                                : 'ring-2 ring-dashed ring-amber-400/60'
+                              partner.is_ai
+                                ? 'ring-2 ring-violet-500/80 shadow-[0_0_15px_rgba(168,85,247,0.4)]'
+                                : partner.is_online 
+                                  ? 'ring-2 ring-emerald-500/80 group-hover:ring-emerald-400' 
+                                  : 'ring-2 ring-dashed ring-amber-400/60'
                             }`}
                           />
                           {partner.is_online ? (
                             <span 
-                              className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white dark:border-[#060a14] shadow-[0_0_8px_rgba(16,185,129,0.8)]" 
+                              className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white dark:border-[#060a14] ${
+                                partner.is_ai 
+                                  ? 'bg-violet-500 shadow-[0_0_10px_rgba(168,85,247,0.9)]'
+                                  : 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]'
+                              }`} 
                               title="online" 
                             />
                           ) : (
@@ -652,7 +711,12 @@ export default function PartnersPage() {
                               <span>{partner.name}</span>
                               <span>{partner.flag}</span>
                             </h3>
-                            {partner.is_online ? (
+                            {partner.is_ai ? (
+                              <span className="shrink-0 text-[10px] font-black px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-600 dark:text-violet-300 border border-violet-500/40 inline-flex items-center gap-1 uppercase tracking-wider">
+                                <span className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse" />
+                                24/7 en direct
+                              </span>
+                            ) : partner.is_online ? (
                               <span className="shrink-0 text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/40 inline-flex items-center gap-1 uppercase tracking-wider">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                                 online
@@ -666,9 +730,9 @@ export default function PartnersPage() {
                           <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{partner.country} • {partner.specialty}</p>
                           
                           <div className="flex items-center gap-1.5 mt-1 text-xs text-emerald-600 dark:text-emerald-400 font-bold">
-                            <Flame className="w-3.5 h-3.5 fill-emerald-500 text-emerald-500" />
+                            <Flame className={`w-3.5 h-3.5 ${partner.is_ai ? 'fill-violet-500 text-violet-500' : 'fill-emerald-500 text-emerald-500'}`} />
                             <span>{partner.streak || 1} {isFr ? 'j de série' : 'd streak'}</span>
-                            <span className="text-slate-400 dark:text-slate-500 text-[10px]">• Membre Réel</span>
+                            <span className="text-slate-400 dark:text-slate-500 text-[10px]">• {partner.is_ai ? 'Coach IA Officiel' : 'Membre Réel'}</span>
                           </div>
                         </div>
                       </div>
@@ -683,7 +747,11 @@ export default function PartnersPage() {
                         {partner.interests.map((interest, i) => (
                           <span
                             key={i}
-                            className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 text-[11px] text-slate-700 dark:text-slate-300 font-medium"
+                            className={`px-2 py-0.5 rounded-lg border text-[11px] font-medium ${
+                              partner.is_ai
+                                ? 'bg-violet-500/10 border-violet-500/20 text-violet-700 dark:text-violet-300'
+                                : 'bg-slate-100 dark:bg-white/[0.05] border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300'
+                            }`}
                           >
                             {interest}
                           </span>
@@ -697,19 +765,27 @@ export default function PartnersPage() {
                       <Link
                         href={`/chat?partnerId=${partner.id}&partnerName=${encodeURIComponent(partner.name)}`}
                         onClick={() => playSound('click')}
-                        className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/[0.06] dark:hover:bg-white/[0.12] border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                        className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                          partner.is_ai
+                            ? 'bg-violet-500/10 hover:bg-violet-500/20 dark:bg-violet-500/15 dark:hover:bg-violet-500/25 border-violet-500/30 text-violet-700 dark:text-violet-200'
+                            : 'bg-slate-100 hover:bg-slate-200 dark:bg-white/[0.06] dark:hover:bg-white/[0.12] border-slate-200 dark:border-white/10 text-slate-800 dark:text-white'
+                        }`}
                       >
-                        <MessageSquare className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
-                        <span>{isFr ? 'Écrire' : 'Message'}</span>
+                        <MessageSquare className={`w-3.5 h-3.5 ${partner.is_ai ? 'text-violet-500' : 'text-blue-500 dark:text-blue-400'}`} />
+                        <span>{partner.is_ai ? (isFr ? '💬 Dialoguer (IA)' : '💬 Chat (AI)') : (isFr ? 'Écrire' : 'Message')}</span>
                       </Link>
 
                       <Link
                         href={`/call?partnerId=${partner.id}&partnerName=${encodeURIComponent(partner.name)}&video=true&roomId=room_${user?.id ? [user.id, partner.id].sort().join('_') : partner.id}_${Date.now()}`}
                         onClick={() => playSound('call')}
-                        className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 dark:from-emerald-400 dark:to-teal-300 hover:opacity-95 text-slate-950 text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(74,222,128,0.25)]"
+                        className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md ${
+                          partner.is_ai
+                            ? 'bg-gradient-to-r from-violet-600 via-fuchsia-600 to-cyan-500 hover:opacity-95 text-white shadow-[0_0_15px_rgba(168,85,247,0.35)]'
+                            : 'bg-gradient-to-r from-emerald-500 to-teal-400 dark:from-emerald-400 dark:to-teal-300 hover:opacity-95 text-slate-950 shadow-[0_0_15px_rgba(74,222,128,0.25)]'
+                        }`}
                       >
                         <PhoneCall className="w-3.5 h-3.5" />
-                        <span>{isFr ? 'Appeler' : 'Call'}</span>
+                        <span>{partner.is_ai ? (isFr ? '🎙️ Parler Oral (IA)' : '🎙️ Oral Voice (AI)') : (isFr ? 'Appeler' : 'Call')}</span>
                       </Link>
                     </div>
 

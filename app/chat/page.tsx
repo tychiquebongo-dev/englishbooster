@@ -58,6 +58,7 @@ import {
   stopBrowserBarNotification, 
   showDesktopNotification 
 } from '@/lib/browserNotifications';
+import { EMMA_AI_PARTNER, generateEmmaAIResponse, AI_TOPIC_STARTERS } from '@/lib/aiAgent';
 import type { Database } from '@/lib/database.types';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -73,6 +74,7 @@ interface RealPartner {
   is_online: boolean;
   bio: string;
   updated_at?: string;
+  is_ai?: boolean;
 }
 
 interface ChatReplyTo {
@@ -203,6 +205,7 @@ function RealConversationContent() {
   const [conversationMap, setConversationMap] = useState<Record<string, ChatMessage[]>>({});
   const [inputText, setInputText] = useState('');
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [isAiTyping, setIsAiTyping] = useState(false);
   
   // Periodic timer to re-evaluate heartbeat freshness every 15s in real time
   useEffect(() => {
@@ -394,7 +397,23 @@ function RealConversationContent() {
             };
           });
 
-          setPartners(realList);
+          // Build real members list and pin Emma AI Coach permanently at index 0
+          const emmaPartner: RealPartner = {
+            id: EMMA_AI_PARTNER.id,
+            name: EMMA_AI_PARTNER.name,
+            country: EMMA_AI_PARTNER.country,
+            flag: EMMA_AI_PARTNER.flag,
+            avatar: EMMA_AI_PARTNER.avatar,
+            level: EMMA_AI_PARTNER.level,
+            specialty: EMMA_AI_PARTNER.specialty,
+            is_online: true,
+            updated_at: new Date().toISOString(),
+            bio: EMMA_AI_PARTNER.bio,
+            is_ai: true,
+          };
+
+          const fullList: RealPartner[] = [emmaPartner, ...realList];
+          setPartners(fullList);
 
           // Mark current user online in database immediately
           if (user?.id) {
@@ -405,19 +424,19 @@ function RealConversationContent() {
               .then(() => {});
           }
 
-          // Select matching partner if query param passed, otherwise select first real user
-          if (realList.length > 0) {
-            if (partnerIdParam && realList.some(r => r.id === partnerIdParam)) {
+          // Select matching partner if query param passed, otherwise default to Emma AI Coach
+          if (fullList.length > 0) {
+            if (partnerIdParam && fullList.some(r => r.id === partnerIdParam)) {
               setActivePartnerId(partnerIdParam);
               setMobileShowChat(true);
-            } else if (partnerNameParam && realList.some(r => r.name.toLowerCase().includes(partnerNameParam.toLowerCase()))) {
-              const matched = realList.find(r => r.name.toLowerCase().includes(partnerNameParam.toLowerCase()));
+            } else if (partnerNameParam && fullList.some(r => r.name.toLowerCase().includes(partnerNameParam.toLowerCase()))) {
+              const matched = fullList.find(r => r.name.toLowerCase().includes(partnerNameParam.toLowerCase()));
               if (matched) {
                 setActivePartnerId(matched.id);
                 setMobileShowChat(true);
               }
             } else {
-              setActivePartnerId(realList[0].id);
+              setActivePartnerId(fullList[0].id);
               if (typeof window !== 'undefined' && window.innerWidth >= 768) {
                 setMobileShowChat(true);
               } else {
@@ -425,11 +444,27 @@ function RealConversationContent() {
               }
             }
           } else {
-            setActivePartnerId(null);
+            setActivePartnerId(emmaPartner.id);
           }
         }
       } catch (err) {
         console.error('Error loading real profiles:', err);
+        // Fallback: Ensure Emma AI is always available
+        const emmaPartner: RealPartner = {
+          id: EMMA_AI_PARTNER.id,
+          name: EMMA_AI_PARTNER.name,
+          country: EMMA_AI_PARTNER.country,
+          flag: EMMA_AI_PARTNER.flag,
+          avatar: EMMA_AI_PARTNER.avatar,
+          level: EMMA_AI_PARTNER.level,
+          specialty: EMMA_AI_PARTNER.specialty,
+          is_online: true,
+          updated_at: new Date().toISOString(),
+          bio: EMMA_AI_PARTNER.bio,
+          is_ai: true,
+        };
+        setPartners([emmaPartner]);
+        setActivePartnerId(emmaPartner.id);
       } finally {
         if (isMounted) setLoadingPartners(false);
       }
@@ -458,6 +493,12 @@ function RealConversationContent() {
   const activePartner = useMemo(() => {
     const base = partners.find(p => p.id === activePartnerId) || partners[0] || null;
     if (!base) return null;
+    if (base.is_ai || base.id === 'eb-ai-coach') {
+      return {
+        ...base,
+        is_online: true,
+      };
+    }
     const isFresh = base.updated_at ? (now - new Date(base.updated_at).getTime() < 90000) : false;
     const isOnline = Boolean(onlineUserIds.has(base.id) || (base.is_online && isFresh));
     return {
@@ -580,6 +621,31 @@ function RealConversationContent() {
   // 2. Load REAL messages from Supabase database & Subscribe to Live Realtime updates
   useEffect(() => {
     if (!user?.id || !activePartner?.id) return;
+
+    // For Emma AI Coach: Initialize opening greeting if empty, without requiring DB table lookup
+    if (activePartner.id === 'eb-ai-coach' || activePartner.is_ai) {
+      setConversationMap(prev => {
+        if (!prev['eb-ai-coach'] || prev['eb-ai-coach'].length === 0) {
+          const welcomeMsg: ChatMessage = {
+            id: 'emma_init_welcome',
+            sender_id: 'eb-ai-coach',
+            sender_name: 'Emma AI • English Coach',
+            sender_avatar: EMMA_AI_PARTNER.avatar,
+            text: isFr
+              ? "Hello! 👋 Je suis Emma, votre coach & partenaire d'anglais IA disponible 24h/24. De quoi aimeriez-vous parler aujourd'hui ? Choisissez un sujet ci-dessous ou écrivez-moi en anglais !"
+              : "Hello there! 👋 I am Emma, your 24/7 AI English speaking partner & coach. What would you like to practice today? Choose a conversation prompt below or just say hi!",
+            created_at: new Date().toISOString(),
+            status: 'read',
+          };
+          const updated = { ...prev, ['eb-ai-coach']: [welcomeMsg] };
+          saveConversation(updated);
+          return updated;
+        }
+        return prev;
+      });
+      return;
+    }
+
     let isSubscribed = true;
 
     const loadRealDatabaseConversation = async () => {
@@ -1035,6 +1101,13 @@ function RealConversationContent() {
       return;
     }
 
+    // Direct route to AI Voice practice mode
+    if (activePartner.id === 'eb-ai-coach' || activePartner.is_ai) {
+      playSound?.('call');
+      router.push(`/call?partnerId=eb-ai-coach&partnerName=${encodeURIComponent(activePartner.name)}&video=${videoMode}&roomId=ai_voice_${Date.now()}&ai=true`);
+      return;
+    }
+
     setShowOfflineCallModal(null);
     playSound?.('call');
     const roomId = `room_${[user.id, activePartner.id].sort().join('_')}_${Date.now()}`;
@@ -1294,6 +1367,69 @@ function RealConversationContent() {
     setReplyingTo(null);
     setGrammarSuggestion(null);
     setShowEmojiPicker(false);
+
+    // If chatting with Emma AI Coach, generate natural conversational reply with grammar coaching
+    if (activePartner.id === 'eb-ai-coach' || activePartner.is_ai) {
+      setIsAiTyping(true);
+      (async () => {
+        try {
+          let aiReplyText = '';
+          try {
+            const res = await fetch('/api/ai/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                message: textToSend,
+                history: updatedWithUser.slice(-8).map(m => ({
+                  role: m.sender_id === 'eb-ai-coach' ? 'assistant' : 'user',
+                  content: m.text,
+                })),
+                userLevel: profile?.current_level || 'B1',
+              }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data?.reply) aiReplyText = data.reply;
+            }
+          } catch (fetchErr) {
+            console.warn('AI API fetch fallback:', fetchErr);
+          }
+
+          if (!aiReplyText) {
+            aiReplyText = generateEmmaAIResponse(textToSend, profile?.current_level || 'B1');
+          }
+
+          // Natural human-like conversational typing delay
+          const delay = Math.min(1500, Math.max(600, aiReplyText.length * 10));
+          await new Promise(r => setTimeout(r, delay));
+
+          const emmaMessage: ChatMessage = {
+            id: `emma_${Date.now()}`,
+            sender_id: 'eb-ai-coach',
+            sender_name: 'Emma AI • English Coach',
+            sender_avatar: EMMA_AI_PARTNER.avatar,
+            text: aiReplyText,
+            created_at: new Date().toISOString(),
+            status: 'read',
+          };
+
+          setConversationMap(prev => {
+            const current = prev['eb-ai-coach'] || [];
+            const updated = [...current, emmaMessage];
+            const m = { ...prev, ['eb-ai-coach']: updated };
+            saveConversation(m);
+            return m;
+          });
+
+          playSound?.('chime');
+        } catch (err) {
+          console.error('Error generating AI conversation reply:', err);
+        } finally {
+          setIsAiTyping(false);
+        }
+      })();
+      return;
+    }
 
     // Immediately signal partner via Realtime broadcast and background Web Push (even if offline / app closed)
     try {
@@ -2378,10 +2514,19 @@ function RealConversationContent() {
                           src={partner.avatar}
                           alt={partner.name}
                           className={`w-12 h-12 rounded-full object-cover transition-all ${
-                            isOnline ? 'ring-2 ring-emerald-500/60' : 'ring-1 ring-amber-400/50 ring-dashed'
+                            partner.is_ai
+                              ? 'ring-2 ring-violet-500 shadow-[0_0_12px_rgba(168,85,247,0.4)]'
+                              : isOnline 
+                                ? 'ring-2 ring-emerald-500/60' 
+                                : 'ring-1 ring-amber-400/50 ring-dashed'
                           }`}
                         />
-                        {isOnline ? (
+                        {partner.is_ai ? (
+                          <span 
+                            className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-violet-500 border-2 border-[#111b21] shadow-[0_0_8px_rgba(168,85,247,0.9)]" 
+                            title="24/7 online" 
+                          />
+                        ) : isOnline ? (
                           <span 
                             className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-[#00a884] border-2 border-[#111b21] shadow-[0_0_8px_rgba(0,168,132,0.8)]" 
                             title="online" 
@@ -2401,26 +2546,31 @@ function RealConversationContent() {
                             <span>{partner.flag}</span>
                           </span>
                           <div className="flex items-center gap-1 shrink-0">
-                            {isOnline ? (
+                            {partner.is_ai ? (
+                              <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-violet-500/25 text-violet-300 border border-violet-500/40 inline-flex items-center gap-1 uppercase tracking-wider">
+                                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+                                24/7 IA
+                              </span>
+                            ) : isOnline ? (
                               <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 inline-flex items-center gap-1 uppercase tracking-wider">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                 online
                               </span>
                             ) : (
                               <span className="text-[10px] font-bold px-1.5 py-0.2 rounded border border-dashed border-amber-400/70 bg-amber-500/10 text-amber-300 inline-flex items-center gap-1 uppercase tracking-wider">
-                              offline
+                                offline
+                              </span>
+                            )}
+                            <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-[#202c33] text-slate-300 border border-white/5">
+                              {partner.level}
                             </span>
-                          )}
-                          <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-[#202c33] text-slate-300 border border-white/5">
-                            {partner.level}
-                          </span>
+                          </div>
                         </div>
-                      </div>
 
-                      <p className="text-xs text-slate-400 truncate">
-                        {lastMsg ? (lastMsg.text || '') : (partner.specialty || '')}
-                      </p>
-                    </div>
+                        <p className="text-xs text-slate-400 truncate">
+                          {lastMsg ? (lastMsg.text || '') : (partner.specialty || '')}
+                        </p>
+                      </div>
                   </button>
                 </React.Fragment>
               );
@@ -2471,13 +2621,25 @@ function RealConversationContent() {
                     <h2 className="font-bold text-sm sm:text-base text-white flex items-center gap-1 sm:gap-1.5 truncate leading-tight">
                       <span className="truncate">{activePartner.name}</span>
                       <span className="shrink-0">{activePartner.flag}</span>
-                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 hidden sm:inline-flex shrink-0">
-                        {activePartner.level}
-                      </span>
+                      {activePartner.is_ai ? (
+                        <span className="text-[9px] font-black px-2 py-0.5 rounded bg-violet-500/25 text-violet-300 border border-violet-500/40 inline-flex items-center gap-1 uppercase tracking-wider shrink-0">
+                          <Sparkles className="w-2.5 h-2.5 text-violet-400" />
+                          <span>AI Coach 24/7</span>
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 hidden sm:inline-flex shrink-0">
+                          {activePartner.level}
+                        </span>
+                      )}
                     </h2>
                     <p className="text-[11px] text-slate-400 truncate flex items-center gap-1 sm:gap-1.5 mt-0.5">
                       <span className="hidden xs:inline">{activePartner.country} •</span>
-                      {activePartner.is_online ? (
+                      {activePartner.is_ai ? (
+                        <span className="text-violet-400 font-semibold inline-flex items-center gap-1 text-[11px]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+                          24/7 en direct
+                        </span>
+                      ) : activePartner.is_online ? (
                         <span className="text-[#00a884] font-semibold inline-flex items-center gap-1 text-[11px]">
                           <span className="w-1.5 h-1.5 rounded-full bg-[#00a884] animate-pulse" />
                           online
@@ -2860,12 +3022,56 @@ function RealConversationContent() {
                   })
                 )}
 
+                {/* Realtime AI Typing indicator */}
+                {isAiTyping && (
+                  <div className="flex items-end gap-2 justify-start animate-fade-in my-2">
+                    <img
+                      src={EMMA_AI_PARTNER.avatar}
+                      alt="Emma AI"
+                      className="w-7 h-7 rounded-full object-cover ring-2 ring-violet-500/80 mb-1"
+                    />
+                    <div className="bg-[#202c33] border border-violet-500/30 px-3.5 py-2 rounded-2xl rounded-tl-none text-white text-xs flex items-center gap-2 shadow-lg">
+                      <span className="text-violet-300 font-bold flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-violet-400 animate-spin" />
+                        <span>Emma AI writes</span>
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce [animation-delay:-0.3s]" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce [animation-delay:-0.15s]" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce" />
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <div ref={messagesEndRef} />
               </div>
 
               {/* Compose Bar (WhatsApp Authentic) */}
               <div className="p-2 sm:p-3 bg-[#202c33] border-t border-[#2a3942] shrink-0 safe-pb relative">
                 
+                {/* AI Conversation Topic Suggestions */}
+                {activePartner?.id === 'eb-ai-coach' && (
+                  <div className="mb-2 flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1">
+                    <span className="text-[10px] font-bold text-violet-400 shrink-0 uppercase tracking-wider flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-violet-400" />
+                      <span>{isFr ? 'Sujets IA :' : 'AI Topics:'}</span>
+                    </span>
+                    {AI_TOPIC_STARTERS.map((topic, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          handleSendMessage(undefined, topic);
+                        }}
+                        className="px-2.5 py-1 rounded-full bg-violet-500/15 hover:bg-violet-500/25 border border-violet-500/30 text-violet-200 text-xs font-semibold shrink-0 transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+                      >
+                        {topic}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {/* Replying To Quote Banner (WhatsApp Style) */}
                 {replyingTo && (
                   <div className="mb-2 p-2.5 rounded-xl bg-[#111b21] border-l-4 border-[#00a884] border-y border-r border-white/10 flex items-center justify-between gap-3 animate-fade-in shadow-md">

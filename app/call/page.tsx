@@ -61,6 +61,7 @@ function CallContent() {
   const isVideoParam = searchParams?.get('video') !== 'false';
   const isAutoAnswer = searchParams?.get('autoAnswer') === 'true';
   const isCaller = !isAutoAnswer;
+  const isAiCall = partnerId === 'eb-ai-coach' || searchParams?.get('ai') === 'true';
 
   const { user, profile, playSound, refreshProfile } = useAuth();
   const supabase = createClient();
@@ -78,7 +79,7 @@ function CallContent() {
   } | null>(null);
 
   // Call connection state machine
-  const [callStatus, setCallStatus] = useState<CallStatus>(isCaller ? 'calling' : 'connecting');
+  const [callStatus, setCallStatus] = useState<CallStatus>(isAiCall ? 'connected' : (isCaller ? 'calling' : 'connecting'));
   const [micActive, setMicActive] = useState(true);
   const [videoActive, setVideoActive] = useState(isVideoParam);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -147,6 +148,21 @@ function CallContent() {
   // 1. Fetch partner profile from database
   useEffect(() => {
     if (!partnerId) return;
+
+    if (isAiCall) {
+      setPartnerProfile({
+        id: 'eb-ai-coach',
+        full_name: 'Emma AI • English Coach',
+        avatar_url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80',
+        flag: '🇬🇧',
+        current_level: 'C2 Native',
+        country: 'Global / London',
+      });
+      setCallStatus('connected');
+      setHasRemoteStream(true);
+      return;
+    }
+
     const fetchPartner = async () => {
       try {
         const { data } = await supabase
@@ -162,11 +178,11 @@ function CallContent() {
       }
     };
     fetchPartner();
-  }, [partnerId, supabase]);
+  }, [partnerId, isAiCall, supabase]);
 
   // 2. Dial tone sound loop for caller while waiting for partner to answer
   useEffect(() => {
-    if (callStatus !== 'calling') return;
+    if (callStatus !== 'calling' || isAiCall) return;
 
     // Caller hears dial tone while ringing
     playSoundRef.current('call');
@@ -175,11 +191,11 @@ function CallContent() {
     }, 2800);
 
     return () => clearInterval(ringInterval);
-  }, [callStatus]);
+  }, [callStatus, isAiCall]);
 
   // 2b. Auto-timeout after 45s ringing if partner does not answer (e.g. offline partner)
   useEffect(() => {
-    if (callStatus !== 'calling' || !isCaller) return;
+    if (callStatus !== 'calling' || !isCaller || isAiCall) return;
 
     const ringTimeout = setTimeout(async () => {
       if (callStatus === 'calling') {
@@ -267,6 +283,13 @@ function CallContent() {
       } catch (err) {
         console.warn('Camera/mic access blocked or error:', err);
         setPermissionError(true);
+      }
+
+      // If this is an AI speaking session, connect immediately without remote peer signaling
+      if (isAiCall) {
+        setHasRemoteStream(true);
+        setCallStatus('connected');
+        return;
       }
 
       // B. Create RTCPeerConnection with STUN & Metered TURN servers
@@ -1036,7 +1059,15 @@ function CallContent() {
 
             {/* Contextual Status Badge */}
             <div className="text-[11px] sm:text-xs font-semibold flex items-center gap-1.5 mt-2">
-              {callStatus === 'connected' ? (
+              {isAiCall ? (
+                <>
+                  <span className="w-2.5 h-2.5 rounded-full bg-violet-400 animate-pulse" />
+                  <span className="text-violet-300 font-extrabold flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-violet-400" />
+                    <span>{isFr ? '🤖 COACH IA EN DIRECT • 24/7' : '🤖 LIVE AI COACH • 24/7'}</span>
+                  </span>
+                </>
+              ) : callStatus === 'connected' ? (
                 <>
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                   <span className="text-emerald-400 font-bold">{isFr ? '🟢 En direct • Connecté' : '🟢 Live • Connected'}</span>
