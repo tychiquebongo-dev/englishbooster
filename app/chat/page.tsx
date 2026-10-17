@@ -1399,9 +1399,13 @@ function RealConversationContent() {
           let aiReplyText = '';
           let aiAudioUrl: string | null = null;
           try {
+            const savedCustomKey = typeof window !== 'undefined' ? localStorage.getItem('eb_gemini_api_key') : null;
             const res = await fetch('/api/ai/chat', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 
+                'Content-Type': 'application/json',
+                ...(savedCustomKey ? { 'x-gemini-key': savedCustomKey } : {})
+              },
               body: JSON.stringify({
                 message: textToSend,
                 history: updatedWithUser.slice(-8).map(m => ({
@@ -1410,6 +1414,7 @@ function RealConversationContent() {
                 })),
                 userLevel: profile?.current_level || 'B1',
                 includeAudio: aiVoiceNotesEnabled,
+                customApiKey: savedCustomKey || undefined,
               }),
             });
             if (res.ok) {
@@ -1704,9 +1709,13 @@ function RealConversationContent() {
                 let aiAudioUrl: string | null = null;
 
                 try {
+                  const savedCustomKey = typeof window !== 'undefined' ? localStorage.getItem('eb_gemini_api_key') : null;
                   const res = await fetch('/api/ai/chat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                      'Content-Type': 'application/json',
+                      ...(savedCustomKey ? { 'x-gemini-key': savedCustomKey } : {})
+                    },
                     body: JSON.stringify({
                       message: aiQuery,
                       history: (conversationMap['eb-ai-coach'] || []).slice(-8).map(m => ({
@@ -1715,6 +1724,7 @@ function RealConversationContent() {
                       })),
                       userLevel: profile?.current_level || 'B1',
                       includeAudio: true,
+                      customApiKey: savedCustomKey || undefined,
                     }),
                   });
                   if (res.ok) {

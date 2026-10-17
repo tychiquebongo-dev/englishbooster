@@ -310,7 +310,48 @@ export function generateEmmaAIResponse(
     return `Going back to your career and work goals, what is one professional achievement you're especially proud of, or a skill you're currently trying to master?${coachingNote}`;
   }
 
-  // 17. High-engagement conversational responses
+  // 17. Direct Grammar & Language Q&A matching
+  if (/make (vs|and|or) do|difference between make and do|différence entre make et do/i.test(lower)) {
+    return `Here is the golden rule for **'make' vs 'do'**:\n\n1. **DO** is for activities, chores, work, and general tasks (no physical object created):\n   • *do homework*, *do the dishes*, *do business*, *do a favor*, *do your best*.\n2. **MAKE** is for creating, producing, constructing, or building something new (or causing a reaction):\n   • *make a cake*, *make coffee*, *make a decision*, *make money*, *make friends*, *make a phone call*, *make a mistake*.\n\n💡 *Pro Tip*: You **do** an activity, but you **make** a creation!\nCan you try forming one sentence with 'make' and one with 'do'?`;
+  }
+  if (/say (vs|and|or) tell|difference between say and tell|différence entre say et tell/i.test(lower)) {
+    return `Here is the key difference between **'say' and 'tell'**:\n\n• **SAY** focuses on the words spoken: You *say something (to someone)*. (*"He said hello to me."*)\n• **TELL** focuses on giving information to a person: You *tell someone something*. (*"He told me a secret."*)\n\n⚠️ *Common mistake*: Never say *"He said me"*. Always say *"He told me"* or *"He said to me"*!\nWould you like to try using 'told me' in a sentence?`;
+  }
+  if (/since (vs|and|or) for|difference between since and for|depuis en anglais/i.test(lower)) {
+    return `Both translate to *« depuis »*, but follow this simple rule:\n\n• **SINCE** = specific starting point in time (*since 2021*, *since Monday*, *since 9:00 AM*).\n• **FOR** = duration or period of time (*for 3 years*, *for two weeks*, *for 20 minutes*).\n\n💡 *Example*: *"I have been studying English for two years, since 2024."*\nHow long have you been learning English? Complete this: *\"I have been learning English for...\"*`;
+  }
+  if (/in (vs|and|or) on (vs|and|or) at|preposition|préposition/i.test(lower)) {
+    return `Think of **IN, ON, AT** as a pyramid from biggest to most specific:\n\n1. **IN** (General / Enclosed): Years, months, cities, countries (*in 2026*, *in July*, *in Paris*, *in France*).\n2. **ON** (Surfaces & Days): Days, dates, streets, public transport (*on Monday*, *on Oxford Street*, *on the bus*).\n3. **AT** (Specific Point / Time): Exact times and specific locations (*at 4:00 PM*, *at home*, *at work*).\n\nWhere are you practicing from today? Practice using 'in' or 'at'!`;
+  }
+  if (/present perfect|past simple/i.test(lower)) {
+    return `Here is how to choose between **Past Simple** and **Present Perfect**:\n\n• **Past Simple** (Finished Past): Use when the time is specified and completely finished (*"I went to London in 2022"* / *"I saw him yesterday"*).\n• **Present Perfect** (Life Experience / Connected to Now): Use for life experiences when time is not specified (*"I have visited London twice"* / *"I have lost my keys!"*).\n\nHave you ever traveled abroad? You can answer: *"Yes, I have been to..."* or *"No, I haven't traveled abroad yet."*`;
+  }
+
+  // 18. Capital & Geographical Q&A
+  if (/capital|capitale/i.test(lower)) {
+    if (lower.includes('canada')) return "The capital of **Canada** is **Ottawa**! (Located in Ontario, known for Parliament Hill). Many people guess Toronto, but Ottawa is the official capital. Have you ever visited Canada?";
+    if (lower.includes('france')) return "La capitale de la **France** est **Paris** ! Known worldwide as the City of Light. In English, pronounced /ˈpær.ɪs/ with an audible 's'. Have you visited Paris?";
+    if (lower.includes('uk') || lower.includes('england') || lower.includes('angleterre')) return "The capital of the **United Kingdom (England)** is **London**! A global cultural and economic capital along the River Thames.";
+    if (lower.includes('usa') || lower.includes('united states') || lower.includes('etats-unis')) return "The capital of the **United States** is **Washington, D.C.**! Named after George Washington. Remember 'D.C.' stands for District of Columbia.";
+    if (lower.includes('germany') || lower.includes('allemagne')) return "The capital of **Germany** is **Berlin**! Famous for its vibrant arts, culture, and history. Pronounced /bɜːˈlɪn/ in English.";
+    if (lower.includes('japan') || lower.includes('japon')) return "The capital of **Japan** is **Tokyo**! The world's most populous metropolitan area, famous for technology, food, and culture.";
+    if (lower.includes('congo') || lower.includes('drc') || lower.includes('rdc')) return "The capital of the **Democratic Republic of the Congo (DRC)** is **Kinshasa**! A bustling megacity of over 17 million people along the Congo River.";
+    if (lower.includes('australia') || lower.includes('australie')) return "The capital of **Australia** is **Canberra**! Many people mistakenly think it's Sydney or Melbourne, but Canberra was chosen as a compromise in 1908.";
+    if (lower.includes('senegal')) return "La capitale du **Sénégal** est **Dakar** ! The westernmost city on the African mainland, known for Atlantic ocean views and vibrant culture.";
+    if (lower.includes('ivory coast') || lower.includes('cote d\'ivoire') || lower.includes('côte d\'ivoire')) return "The political capital of **Côte d'Ivoire** is **Yamoussoukro**, while **Abidjan** is the major economic and cultural metropolis.";
+  }
+
+  // 19. Job interview question inquiries
+  if (/tell me about yourself|parle moi de toi|présente toi/i.test(lower)) {
+    return `For **"Tell me about yourself"** in an interview, use the **Present-Past-Future Formula**:\n\n1. **PRESENT**: Your current role and what you specialize in (*"Currently, I am a..."*)\n2. **PAST**: 1 or 2 past achievements or relevant projects (*"Before this, I developed..."*)\n3. **FUTURE**: Why you are excited for this exact opportunity (*"I'm excited about this role because..."*)\n\nKeep it under 90 seconds! What profession do you work in? Let's draft your 3 sentences!`;
+  }
+
+  // 20. Direct Questions answering (when user asks "what is", "how do", "pourquoi", "comment", etc.)
+  if (lower.includes('?') || /^(what|how|why|who|where|when|can you|could you|pourquoi|comment|qu'est-ce|c'est quoi|qui est)\b/i.test(lower)) {
+    return `That is an excellent question! In natural spoken English, discussing this clearly is all about having the right vocabulary and sentence structure.\n\nHere is how native speakers address this concept:\n• Focus on expressing your thought clearly and concisely without overthinking.\n• In conversation, you can say: *"From my perspective, this is very important because..."*\n\n💡 *Fluency tip*: What is your own opinion or personal experience with this? I'd love to hear how you would explain it in English!`;
+  }
+
+  // 21. High-engagement conversational responses
   const openResponses = [
     `That is such an interesting thought! I really appreciate the way you phrased that. Could you expand a little on what made you see it from that angle?${coachingNote}`,
     `I completely get where you're coming from! Expressing nuanced opinions like this in English is a major milestone in language learning. What would you say is the biggest factor behind that?${coachingNote}`,

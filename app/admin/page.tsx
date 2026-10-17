@@ -82,11 +82,82 @@ export default function AdminBackOfficePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
+  // Gemini API Key management state
+  const [geminiApiKeyInput, setGeminiApiKeyInput] = useState('');
+  const [geminiTestStatus, setGeminiTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [geminiTestMsg, setGeminiTestMsg] = useState('');
+  const [serverHasKey, setServerHasKey] = useState<boolean | null>(null);
+
   // New challenge form state
   const [newChallengeTitle, setNewChallengeTitle] = useState('');
   const [newChallengeTopic, setNewChallengeTopic] = useState('');
   const [newChallengeLevel, setNewChallengeLevel] = useState('B1');
   const [creatingChallenge, setCreatingChallenge] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedKey = localStorage.getItem('eb_gemini_api_key');
+      if (savedKey) setGeminiApiKeyInput(savedKey);
+      
+      // Probe Gemini API connection status
+      fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'system_status_probe' }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          setServerHasKey(!!data.hasGeminiKey);
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  const handleSaveGeminiKey = () => {
+    playSound?.('click');
+    if (typeof window !== 'undefined') {
+      if (geminiApiKeyInput.trim()) {
+        localStorage.setItem('eb_gemini_api_key', geminiApiKeyInput.trim());
+        setActionNotice(isFr ? "Clé API Google Gemini enregistrée avec succès !" : "Google Gemini API key saved successfully!");
+      } else {
+        localStorage.removeItem('eb_gemini_api_key');
+        setActionNotice(isFr ? "Clé personnalisée effacée (moteur de secours haute intelligence actif)" : "Custom key cleared (built-in intelligence active)");
+      }
+      setTimeout(() => setActionNotice(null), 4000);
+    }
+  };
+
+  const handleTestGeminiConnection = async () => {
+    playSound?.('click');
+    setGeminiTestStatus('testing');
+    setGeminiTestMsg(isFr ? 'Test de réponse avec l\'API en cours...' : 'Testing AI response with API...');
+    try {
+      const keyToTest = geminiApiKeyInput.trim() || undefined;
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(keyToTest ? { 'x-gemini-key': keyToTest } : {}),
+        },
+        body: JSON.stringify({
+          message: 'Can you explain the difference between make and do in 2 sentences?',
+          customApiKey: keyToTest,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data?.reply) {
+        setGeminiTestStatus('success');
+        setGeminiTestMsg(`${isFr ? 'Succès ! Réponse reçue via' : 'Success! Response via'} [${data.model || 'Gemini'}]: "${data.reply.slice(0, 85)}..."`);
+        playSound?.('achievement');
+      } else {
+        setGeminiTestStatus('error');
+        setGeminiTestMsg(data?.error || (isFr ? 'Échec du test de connexion' : 'Connection test failed'));
+      }
+    } catch (err: any) {
+      setGeminiTestStatus('error');
+      setGeminiTestMsg(err?.message || (isFr ? 'Erreur réseau lors du test' : 'Network error'));
+    }
+  };
 
   const fetchAdminData = async () => {
     setLoadingData(true);
@@ -1265,36 +1336,96 @@ export default function AdminBackOfficePage() {
             </div>
 
             {/* Google Gemini AI Configuration Card */}
-            <div className="p-4 rounded-xl bg-slate-50/70 dark:bg-white/[0.03] border border-violet-500/20 dark:border-violet-500/30 space-y-3 md:col-span-2">
-              <div className="flex items-center justify-between">
-                <p className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-violet-500" />
-                  <span>{isFr ? "Moteur IA Google Gemini (Gemini AI Partenaire 24/7)" : "Google Gemini AI Engine (Gemini AI Partner 24/7)"}</span>
-                </p>
-                <span className="text-[10px] font-black px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30 uppercase tracking-wider">
-                  Gemini 1.5 Flash • 2.0 Flash
-                </span>
-              </div>
-              <p className="text-slate-600 dark:text-slate-400 text-xs">
-                {isFr 
-                  ? "L'API Gemini répond à toutes les questions posées (culture générale, préparation d'entretiens, vie quotidienne, grammaire, vocabulaire), donne des conseils pédagogiques, forme en anglais à l'écrit et au vocal (notes vocales WhatsApp, dictée et appels directs/vidéos)."
-                  : "The Gemini API answers any question asked across all domains, gives personalized pedagogical advice, and trains users in written and vocal English (WhatsApp voice notes, speech dictation, live audio/video calls)."}
-              </p>
-              <div className="p-3 rounded-lg bg-black/30 border border-white/5 font-mono text-[11px] text-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <span className="text-slate-500">Variable: </span>
-                  <span className="text-emerald-400 font-bold">GEMINI_API_KEY</span>
-                  <span className="text-slate-500 text-[10px] ml-2">(.env.local ou Vercel Environment Variables)</span>
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-violet-950/20 via-slate-900/40 to-black/60 border border-violet-500/30 space-y-4 md:col-span-2 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-violet-600/20 border border-violet-500/40 flex items-center justify-center text-violet-400">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="font-extrabold text-sm text-white flex items-center gap-2">
+                      <span>{isFr ? "API Google Gemini & Moteur Partenaires 24/7" : "Google Gemini API & Partner 24/7 Engine"}</span>
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      {isFr ? "Répond à toutes les questions (grammaire, culture, traductions, vocabulaire, entretiens, audio)" : "Answers all questions (grammar, world facts, translations, interviews, voice notes)"}
+                    </p>
+                  </div>
                 </div>
-                <a
-                  href="https://aistudio.google.com/app/apikey"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-2.5 py-1 rounded bg-violet-600/30 hover:bg-violet-600/50 text-violet-200 border border-violet-500/40 text-[10px] font-bold inline-flex items-center gap-1 w-fit transition-colors"
-                >
-                  <span>{isFr ? "Obtenir clé API gratuite Google AI Studio" : "Get free Google AI Studio Key"}</span>
-                  <ArrowRight className="w-3 h-3" />
-                </a>
+
+                <div className="flex items-center gap-2">
+                  {(serverHasKey || geminiApiKeyInput.trim()) ? (
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-[10px] flex items-center gap-1.5 shadow">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>{isFr ? "Google Gemini Actif" : "Google Gemini Active"}</span>
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-full bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-bold text-[10px] flex items-center gap-1.5 shadow">
+                      <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                      <span>{isFr ? "Moteur de Connaissances Autonome" : "Autonomous Knowledge Engine"}</span>
+                    </span>
+                  )}
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30 uppercase tracking-wider">
+                    Gemini 1.5 • 2.0 Flash
+                  </span>
+                </div>
+              </div>
+
+              {/* API Key Input and Action Buttons */}
+              <div className="space-y-2 pt-1">
+                <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                  <span>{isFr ? "Clé API Google Gemini (GEMINI_API_KEY) :" : "Google Gemini API Key (GEMINI_API_KEY):"}</span>
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-violet-400 hover:text-violet-300 text-[11px] underline flex items-center gap-1"
+                  >
+                    <span>{isFr ? "Obtenir une clé gratuite sur Google AI Studio" : "Get free key on Google AI Studio"}</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </a>
+                </label>
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="password"
+                    value={geminiApiKeyInput}
+                    onChange={(e) => setGeminiApiKeyInput(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="flex-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 font-mono"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveGeminiKey}
+                      className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer whitespace-nowrap active:scale-95"
+                    >
+                      {isFr ? "Sauvegarder" : "Save Key"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={geminiTestStatus === 'testing'}
+                      onClick={handleTestGeminiConnection}
+                      className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 border border-white/15 font-bold text-xs transition-all cursor-pointer whitespace-nowrap disabled:opacity-50 active:scale-95"
+                    >
+                      {geminiTestStatus === 'testing' 
+                        ? (isFr ? 'Test...' : 'Testing...') 
+                        : (isFr ? 'Tester Réponse IA' : 'Test AI Answer')}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Test Feedback Notice */}
+                {geminiTestMsg && (
+                  <div className={`p-3 rounded-xl text-xs border transition-all ${
+                    geminiTestStatus === 'success' 
+                      ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                      : geminiTestStatus === 'error'
+                      ? 'bg-rose-950/40 border-rose-500/40 text-rose-200'
+                      : 'bg-violet-950/40 border-violet-500/40 text-violet-200'
+                  }`}>
+                    <p className="font-semibold">{geminiTestMsg}</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>

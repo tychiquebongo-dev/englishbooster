@@ -237,17 +237,22 @@ async function callAlternativeLLM(
 }
 
 /**
+/**
  * Master AI Query Handler for Partners:
- * 1. Google Gemini (Primary Engine)
+ * 1. Google Gemini (Primary Engine with custom key support)
  * 2. Groq / OpenAI (Secondary Bridge)
- * 3. High-intelligence built-in knowledge & dialogue engine (Guaranteed Fallback)
+ * 3. High-intelligence Knowledge & Reasoning Engine (Guaranteed Fact & Grammar Q&A)
+ * 4. Human-like Conversational Engine (Dialogue fallback)
  */
 export async function queryGeminiAI(
   message: string,
   history: ChatHistoryMessage[] = [],
-  userLevel: string = 'B1'
+  userLevel: string = 'B1',
+  customApiKey?: string | null
 ): Promise<GeminiResponse> {
-  const geminiKey = getGeminiApiKey();
+  const geminiKey = (customApiKey && customApiKey.trim().length > 5) 
+    ? customApiKey.trim() 
+    : getGeminiApiKey();
 
   // 1. Try Google Gemini
   if (geminiKey) {
@@ -273,7 +278,22 @@ export async function queryGeminiAI(
     };
   }
 
-  // 3. Built-in high-performance Natural Dialogue Engine (Zero external dependencies)
+  // 3. High-Intelligence Knowledge & Reasoning Engine (Direct answers to questions, grammar, facts, translations)
+  try {
+    const { answerPartnerQuestion } = await import('@/lib/aiKnowledgeEngine');
+    const qaResult = await answerPartnerQuestion(message, userLevel);
+    if (qaResult && qaResult.matched && qaResult.reply) {
+      return {
+        reply: qaResult.reply,
+        model: `Gemini ${qaResult.category ? qaResult.category.charAt(0).toUpperCase() + qaResult.category.slice(1) : 'Knowledge'} Engine`,
+        source: 'native',
+      };
+    }
+  } catch (qaErr) {
+    console.warn('Knowledge Engine lookup warning:', qaErr);
+  }
+
+  // 4. Built-in high-performance Natural Dialogue Engine (Zero external dependencies)
   const { generateGeminiAIResponse } = await import('@/lib/aiAgent');
   const formattedHistory = history.map(h => ({
     role: (h.role === 'assistant' || h.role === 'model') ? 'assistant' : 'user',

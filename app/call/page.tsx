@@ -408,13 +408,18 @@ function CallContent() {
 
     let reply = '';
     try {
+      const savedCustomKey = typeof window !== 'undefined' ? localStorage.getItem('eb_gemini_api_key') : null;
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(savedCustomKey ? { 'x-gemini-key': savedCustomKey } : {})
+        },
         body: JSON.stringify({
           message: text,
           userLevel: profile?.current_level || 'B1',
           history: aiTurnHistoryRef.current.slice(-6),
+          customApiKey: savedCustomKey || undefined,
         }),
       });
       if (res.ok) {

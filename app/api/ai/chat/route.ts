@@ -71,8 +71,10 @@ export async function POST(req: NextRequest) {
       content: h.content || h.text || '',
     }));
 
-    // Query Gemini AI (Google Gemini Primary Engine -> Fallbacks)
-    const aiResult = await queryGeminiAI(message, formattedHistory, userLevel);
+    const customApiKey = req.headers.get('x-gemini-key') || body.customApiKey || null;
+
+    // Query Gemini AI (Google Gemini Primary Engine -> Knowledge Engine -> Fallbacks)
+    const aiResult = await queryGeminiAI(message, formattedHistory, userLevel, customApiKey);
     const reply = aiResult.reply;
 
     // Generate Audio Voice Note if requested (message vocal)
@@ -91,7 +93,7 @@ export async function POST(req: NextRequest) {
       agent: 'Gemini AI',
       model: aiResult.model,
       source: aiResult.source,
-      hasGeminiKey: !!getGeminiApiKey(),
+      hasGeminiKey: !!(customApiKey || getGeminiApiKey()),
       timestamp: new Date().toISOString(),
     });
   } catch (err: any) {
