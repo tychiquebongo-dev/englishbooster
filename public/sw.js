@@ -1,14 +1,61 @@
 // English Booster Production Service Worker for Background Call & Message Notifications
 // Handles Web Push events even when the application is closed or phone is locked (Hors-Application / Background)
 
-const EB_CACHE_NAME = 'eb-pwa-v3';
+const EB_CACHE_NAME = 'eb-pwa-v4';
 
+// Install event: Pre-cache PWA core assets for instant launch & Chromium installability
 self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(EB_CACHE_NAME).then((cache) => {
+      return cache.addAll([
+        '/',
+        '/manifest.json',
+        '/assets/images/logo.svg',
+        '/assets/images/icon-192.png',
+        '/assets/images/icon-512.png',
+      ]).catch(() => {});
+    })
+  );
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys.filter((key) => key !== EB_CACHE_NAME).map((key) => caches.delete(key))
+      );
+    }).then(() => self.clients.claim())
+  );
+});
+
+// Fetch event: Strictly required by Chromium on Mobile & Desktop for PWA installability
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+  if (url.pathname.startsWith('/api/') || url.hostname.includes('supabase')) return;
+
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        if (response && response.status === 200 && response.type === 'basic') {
+          const resClone = response.clone();
+          caches.open(EB_CACHE_NAME).then((cache) => cache.put(event.request, resClone)).catch(() => {});
+        }
+        return response;
+      })
+      .catch(async () => {
+        const cache = await caches.open(EB_CACHE_NAME);
+        const cached = await cache.match(event.request);
+        if (cached) return cached;
+        if (event.request.mode === 'navigate') {
+          const fallback = await cache.match('/');
+          if (fallback) return fallback;
+        }
+        return new Response('English Booster Offline', { status: 503, statusText: 'Offline' });
+      })
+  );
 });
 
 // 1. Web Push event: Wakes service worker when user is outside application / phone locked

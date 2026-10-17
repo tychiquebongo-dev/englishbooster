@@ -37,6 +37,16 @@ export const metadata: Metadata = {
   keywords: ['English learning', 'conversation partner', 'international chat', 'CEFR fluency', 'SaaS English', 'Tychique Bongo'],
   authors: [{ name: 'Tychique Bongo', url: 'https://englishbooster.com' }],
   manifest: '/manifest.json',
+  icons: {
+    icon: [
+      { url: '/assets/images/logo.svg', type: 'image/svg+xml' },
+      { url: '/assets/images/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/assets/images/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/assets/images/icon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
