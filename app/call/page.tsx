@@ -15,6 +15,8 @@ import {
   Sparkles, 
   Share2, 
   Volume2, 
+  VolumeX,
+  Send,
   Trophy, 
   ArrowRight,
   ShieldAlert,
@@ -25,6 +27,14 @@ import {
   RefreshCw
 } from 'lucide-react';
 import Link from 'next/link';
+import { 
+  generateEmmaAIResponse, 
+  speakEnglishText, 
+  stopSpeaking, 
+  findGrammarCoachingTip, 
+  AI_TOPIC_STARTERS,
+  EMMA_AI_PARTNER 
+} from '@/lib/aiAgent';
 import { 
   RTC_CONFIG, 
   getLocalUserMedia, 
@@ -91,6 +101,24 @@ function CallContent() {
   const [hasRemoteStream, setHasRemoteStream] = useState(false);
   const [remoteEndedNotice, setRemoteEndedNotice] = useState<string | null>(null);
 
+  // Emma AI Live Voice & Video Call State
+  const [isAiSpeaking, setIsAiSpeaking] = useState(false);
+  const [isAiThinking, setIsAiThinking] = useState(false);
+  const [isListeningUser, setIsListeningUser] = useState(false);
+  const [aiSpokenText, setAiSpokenText] = useState('');
+  const [userSpokenText, setUserSpokenText] = useState('');
+  const [aiCoachingTip, setAiCoachingTip] = useState<{ tip: string; betterPhrase: string } | null>(null);
+
+  const recognitionRef = useRef<any>(null);
+  const silenceTimerRef = useRef<any>(null);
+  const isAiSpeakingRef = useRef(false);
+  isAiSpeakingRef.current = isAiSpeaking;
+  const isAiThinkingRef = useRef(false);
+  isAiThinkingRef.current = isAiThinking;
+  const isListeningUserRef = useRef(false);
+  isListeningUserRef.current = isListeningUser;
+  const aiTurnHistoryRef = useRef<{ role: string; content: string }[]>([]);
+
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -114,6 +142,10 @@ function CallContent() {
 
   // Stop all media tracks helper
   const stopAllMedia = useCallback(() => {
+    stopSpeaking();
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch {}
+    }
     if (streamRef.current) {
       stopLocalMediaStream(streamRef.current);
       streamRef.current = null;
@@ -260,6 +292,203 @@ function CallContent() {
       clearInterval(promptInterval);
     };
   }, [callStatus, playSound]);
+
+  // Speech Recognition loop for AI Voice & Video Calls
+  const startSpeechRecognition = useCallback(() => {
+    if (typeof window === 'undefined' || !isAiCall) return;
+    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRec) {
+      console.warn('SpeechRecognition API is not available in this browser environment.');
+      return;
+    }
+
+    try {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch {}
+      }
+
+      const rec = new SpeechRec();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = 'en-US';
+
+      rec.onstart = () => {
+        setIsListeningUser(true);
+      };
+
+      rec.onresult = (event: any) => {
+        if (isAiSpeakingRef.current || isAiThinkingRef.current) return;
+
+        let interim = '';
+        let final = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            final += event.results[i][0].transcript;
+          } else {
+            interim += event.results[i][0].transcript;
+          }
+        }
+        const spoken = (final || interim).trim();
+        if (spoken) {
+          setUserSpokenText(spoken);
+
+          // Reset silence timer: after 1.8s of quiet, auto-respond!
+          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = setTimeout(() => {
+            handleUserFinishedSpeaking(spoken);
+          }, 1800);
+        }
+      };
+
+      rec.onerror = (err: any) => {
+        if (err?.error !== 'no-speech') {
+          console.warn('Speech recognition notice:', err?.error);
+        }
+      };
+
+      rec.onend = () => {
+        if (!isAiSpeakingRef.current && !isAiThinkingRef.current && callStatus === 'connected' && isAiCall) {
+          try { rec.start(); } catch {}
+        } else {
+          setIsListeningUser(false);
+        }
+      };
+
+      rec.start();
+      recognitionRef.current = rec;
+    } catch (err) {
+      console.warn('Start speech recognition error:', err);
+    }
+  }, [isAiCall, callStatus]);
+
+  // Handle user speech complete (auto or manual tap)
+  const handleUserFinishedSpeaking = async (spokenText?: string) => {
+    const text = (spokenText || userSpokenText).trim();
+    if (!text || isAiThinkingRef.current || isAiSpeakingRef.current) return;
+
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+
+    // Pause recognition while Emma is speaking
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch {}
+    }
+    setIsListeningUser(false);
+    setIsAiThinking(true);
+
+    // Grammar check
+    const tip = findGrammarCoachingTip(text);
+    if (tip) {
+      setAiCoachingTip(tip);
+    }
+
+    aiTurnHistoryRef.current.push({ role: 'user', content: text });
+
+    let reply = '';
+    try {
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          userLevel: profile?.current_level || 'B1',
+          history: aiTurnHistoryRef.current.slice(-6),
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.reply) reply = data.reply;
+      }
+    } catch (e) {
+      console.warn('AI call speech fetch fallback:', e);
+    }
+
+    if (!reply) {
+      reply = generateEmmaAIResponse(text, aiTurnHistoryRef.current.slice(-6), profile?.current_level || 'B1');
+    }
+
+    aiTurnHistoryRef.current.push({ role: 'assistant', content: reply });
+
+    setIsAiThinking(false);
+    setAiSpokenText(reply);
+    setIsAiSpeaking(true);
+
+    speakEnglishText(
+      reply,
+      () => {
+        setIsAiSpeaking(true);
+      },
+      () => {
+        setIsAiSpeaking(false);
+        setUserSpokenText('');
+        startSpeechRecognition();
+      }
+    );
+  };
+
+  // Switch conversation topic anytime during call
+  const handleSelectAiTopic = (topicItem: typeof AI_TOPIC_STARTERS[0]) => {
+    playSound('click');
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch {}
+    }
+    stopSpeaking();
+    setIsListeningUser(false);
+
+    const promptText = `Let's switch to ${topicItem.topic}! ${topicItem.prompt}`;
+    setAiSpokenText(promptText);
+    aiTurnHistoryRef.current.push({ role: 'assistant', content: promptText });
+    setIsAiSpeaking(true);
+
+    speakEnglishText(
+      promptText,
+      () => setIsAiSpeaking(true),
+      () => {
+        setIsAiSpeaking(false);
+        setUserSpokenText('');
+        startSpeechRecognition();
+      }
+    );
+  };
+
+  // Initial Emma spoken greeting upon connecting AI call
+  useEffect(() => {
+    if (!isAiCall || callStatus !== 'connected') return;
+
+    let isMounted = true;
+    const timer = setTimeout(() => {
+      if (!isMounted) return;
+      const greeting = isVideoParam
+        ? "Hello! I'm Emma, your English Booster live video coach! It's fantastic to see you and practice speaking together. How are you feeling today?"
+        : "Hello! I'm Emma, your English Booster speaking coach. It's wonderful to practice speaking with you! How are you doing today, and what would you like to discuss?";
+
+      setAiSpokenText(greeting);
+      aiTurnHistoryRef.current.push({ role: 'assistant', content: greeting });
+      setIsAiSpeaking(true);
+
+      speakEnglishText(
+        greeting,
+        () => {
+          if (isMounted) setIsAiSpeaking(true);
+        },
+        () => {
+          if (isMounted) {
+            setIsAiSpeaking(false);
+            startSpeechRecognition();
+          }
+        }
+      );
+    }, 1200);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+      stopSpeaking();
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch {}
+      }
+    };
+  }, [isAiCall, callStatus, isVideoParam, startSpeechRecognition]);
 
   // Ensure local video preview is attached when camera is toggled or rendered
   useEffect(() => {
@@ -1050,96 +1279,260 @@ function CallContent() {
       {/* Main Video Stage with Mobile Picture-in-Picture (PiP) */}
       <div className="flex-1 relative md:grid md:grid-cols-2 gap-3 sm:gap-4 my-1 sm:my-3 min-h-0 overflow-hidden rounded-2xl sm:rounded-3xl">
         
-        {/* Remote Partner Screen (Full screen on mobile, 1st col on desktop) */}
-        <div className="relative w-full h-full rounded-2xl sm:rounded-3xl overflow-hidden bg-gradient-to-b from-[#0b1329] via-[#070d1d] to-[#040814] border border-white/10 flex flex-col items-center justify-center p-4 sm:p-6 shadow-2xl">
-          
-          {/* Live Video Stream from Partner (Muted so browser autoplay policy never blocks it) */}
-          <video
-            ref={(el) => {
-              remoteVideoRef.current = el;
-              if (el && remoteMediaStreamRef.current && remoteMediaStreamRef.current.getTracks().length > 0) {
-                if (el.srcObject !== remoteMediaStreamRef.current) {
-                  el.srcObject = remoteMediaStreamRef.current;
-                }
-                el.play().catch(() => {});
-              }
-            }}
-            autoPlay
-            playsInline
-            muted
-            className={`w-full h-full object-cover absolute inset-0 transition-opacity duration-500 ${hasRemoteStream ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none'}`}
-          />
+        {/* Remote Partner Screen / AI Coach Video Stage */}
+        <div className="relative w-full h-full rounded-2xl sm:rounded-3xl overflow-hidden bg-gradient-to-b from-[#0b1329] via-[#070d1d] to-[#040814] border border-white/10 flex flex-col items-center justify-between p-3 sm:p-5 shadow-2xl">
+          {isAiCall ? (
+            /* ============================================================== */
+            /* EMMA AI INTERACTIVE VIDEO COACH STAGE                          */
+            /* ============================================================== */
+            <div className="w-full h-full flex flex-col justify-between items-center relative z-10">
+              
+              {/* Top Status & Conversation Topic Chips */}
+              <div className="w-full space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <span className="px-2.5 py-1 rounded-full bg-violet-500/25 border border-violet-500/40 text-violet-300 font-extrabold text-[10px] sm:text-xs flex items-center gap-1.5 shadow">
+                      <Sparkles className="w-3.5 h-3.5 text-violet-400 animate-spin" />
+                      <span>{isVideoParam ? (isFr ? 'VIDÉO IA 24/7' : 'AI VIDEO 24/7') : (isFr ? 'VOCAL IA 24/7' : 'AI VOICE 24/7')}</span>
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-black/60 border border-white/15 text-white text-[10px] sm:text-xs font-bold">
+                      🇬🇧 London, UK
+                    </span>
+                  </div>
 
-          {/* Fallback & Waiting Avatar Interface */}
-          <div className="relative z-0 flex flex-col items-center text-center">
-            {partnerProfile?.avatar_url ? (
-              <div className="relative">
-                <img
-                  src={partnerProfile.avatar_url}
-                  alt={partnerName}
-                  className="w-24 h-24 sm:w-36 sm:h-36 rounded-full object-cover ring-4 ring-emerald-400/60 shadow-[0_0_40px_rgba(74,222,128,0.3)]"
-                />
-                <span className="absolute bottom-1 right-1 sm:bottom-2 sm:right-2 w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-[#060a14] border border-white/20 flex items-center justify-center text-xs sm:text-sm shadow">
-                  {partnerProfile.flag || '🌐'}
-                </span>
+                  <div className="flex items-center gap-1.5">
+                    {isAiSpeaking && (
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold flex items-center gap-1 animate-pulse">
+                        <Volume2 className="w-3 h-3" />
+                        <span>Speaking</span>
+                      </span>
+                    )}
+                    {isAiThinking && (
+                      <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold flex items-center gap-1 animate-pulse">
+                        <span>Thinking...</span>
+                      </span>
+                    )}
+                    {isListeningUser && (
+                      <span className="px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/40 text-[10px] font-bold flex items-center gap-1 animate-pulse">
+                        <Mic className="w-3 h-3 text-teal-300" />
+                        <span>Listening</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Quick Topic Chips Carousel */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none no-scrollbar">
+                  {AI_TOPIC_STARTERS.map((item, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleSelectAiTopic(item)}
+                      className="px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white/90 hover:text-white border border-white/15 text-[10px] sm:text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                      title={item.prompt}
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.topic}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            ) : (
-              <div className="w-24 h-24 sm:w-36 sm:h-36 rounded-full bg-gradient-to-tr from-emerald-500/20 to-teal-400/10 border-2 border-emerald-400/40 flex items-center justify-center text-2xl sm:text-4xl font-black text-emerald-300 shadow-[0_0_30px_rgba(74,222,128,0.2)]">
-                {partnerName ? partnerName.charAt(0).toUpperCase() : 'P'}
-              </div>
-            )}
 
-            <p className="mt-3 sm:mt-4 text-base sm:text-lg font-black text-white flex items-center gap-2">
-              <span>{partnerName}</span>
-              <span>{partnerProfile?.flag || '🌐'}</span>
-            </p>
+              {/* Center: Emma Video Avatar & Real-time Equalizer Waveform */}
+              <div className="flex flex-col items-center justify-center my-auto py-2">
+                <div className="relative">
+                  {/* Dynamic Audio Halo Wave */}
+                  {isAiSpeaking && (
+                    <div className="absolute inset-0 rounded-full bg-emerald-400/30 animate-ping -m-2 sm:-m-3 pointer-events-none" />
+                  )}
+                  {isListeningUser && (
+                    <div className="absolute inset-0 rounded-full bg-teal-400/20 animate-pulse -m-2 pointer-events-none" />
+                  )}
 
-            {/* Contextual Status Badge */}
-            <div className="text-[11px] sm:text-xs font-semibold flex items-center gap-1.5 mt-2">
-              {isAiCall ? (
-                <>
-                  <span className="w-2.5 h-2.5 rounded-full bg-violet-400 animate-pulse" />
-                  <span className="text-violet-300 font-extrabold flex items-center gap-1">
+                  <img
+                    src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80"
+                    alt="Emma AI"
+                    className={`w-24 h-24 xs:w-32 xs:h-32 sm:w-40 sm:h-40 rounded-full object-cover transition-all duration-300 ${
+                      isAiSpeaking
+                        ? 'ring-4 ring-emerald-400 shadow-[0_0_50px_rgba(52,211,153,0.6)] scale-105'
+                        : isAiThinking
+                        ? 'ring-4 ring-violet-400 shadow-[0_0_40px_rgba(167,139,250,0.5)] scale-100'
+                        : isListeningUser
+                        ? 'ring-4 ring-teal-400 shadow-[0_0_40px_rgba(45,212,191,0.5)] scale-102'
+                        : 'ring-4 ring-emerald-400/50 shadow-xl'
+                    }`}
+                  />
+
+                  <span className="absolute bottom-1 right-1 sm:bottom-2 sm:right-2 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#060a14] border-2 border-emerald-400 flex items-center justify-center text-sm sm:text-base shadow-lg">
+                    🇬🇧
+                  </span>
+                </div>
+
+                <p className="mt-3 text-base sm:text-lg font-black text-white flex items-center gap-2">
+                  <span>Emma AI • English Coach</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                </p>
+
+                {/* Soundwave Equalizer Bars when Emma speaks */}
+                {isAiSpeaking ? (
+                  <div className="flex items-center gap-1 h-6 mt-2">
+                    {[10, 22, 14, 28, 16, 24, 18, 30, 15, 25, 12, 20].map((h, i) => (
+                      <span
+                        key={i}
+                        style={{ height: `${h}px` }}
+                        className="w-1 rounded-full bg-emerald-400 animate-pulse"
+                      />
+                    ))}
+                  </div>
+                ) : isListeningUser ? (
+                  <p className="mt-2 text-xs text-teal-300 font-semibold flex items-center gap-1.5 animate-pulse">
+                    <Mic className="w-3.5 h-3.5" />
+                    <span>{isFr ? 'Je vous écoute... Parlez en anglais !' : 'Listening... Speak in English!'}</span>
+                  </p>
+                ) : isAiThinking ? (
+                  <p className="mt-2 text-xs text-violet-300 font-semibold flex items-center gap-1.5 animate-pulse">
                     <Sparkles className="w-3.5 h-3.5 text-violet-400" />
-                    <span>{isFr ? '🤖 COACH IA EN DIRECT • 24/7' : '🤖 LIVE AI COACH • 24/7'}</span>
-                  </span>
-                </>
-              ) : callStatus === 'connected' ? (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  <span className="text-emerald-400 font-bold">{isFr ? '🟢 En direct • Connecté' : '🟢 Live • Connected'}</span>
-                </>
-              ) : callStatus === 'declined' ? (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-rose-500" />
-                  <span className="text-rose-400 font-bold">{isFr ? 'Appel refusé / Indisponible' : 'Call declined / Unavailable'}</span>
-                </>
-              ) : callStatus === 'calling' ? (
-                <>
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
-                  <span className="text-amber-300 font-medium">
-                    {isFr ? 'Sonnerie chez le partenaire (signal & alerte Push envoyés)...' : 'Ringing partner (signal & Push alert sent)...'}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-pulse" />
-                  <span className="text-teal-300 font-medium">
-                    {isFr ? 'Connexion au flux vidéo/audio...' : 'Connecting live stream...'}
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
+                    <span>{isFr ? 'Emma formule sa réponse...' : 'Emma is formulating response...'}</span>
+                  </p>
+                ) : (
+                  <p className="mt-2 text-xs text-slate-400">
+                    {isFr ? 'Prêt à vous écouter • Parlez librement' : 'Ready to listen • Speak anytime'}
+                  </p>
+                )}
+              </div>
 
-          <div className="absolute bottom-3 left-3 sm:bottom-6 sm:left-6 z-20 flex items-center gap-2">
-            <span className="px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-black/70 border border-white/20 text-white font-bold text-[11px] sm:text-xs backdrop-blur-md">
-              {partnerName} {partnerProfile?.current_level ? `(${partnerProfile.current_level})` : ''}
-            </span>
-            {callStatus === 'connected' && (
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            )}
-          </div>
+              {/* Subtitles & Captions Overlay */}
+              <div className="w-full max-w-xl mx-auto space-y-2">
+                {/* Coaching Tip Toast */}
+                {aiCoachingTip && (
+                  <div className="p-2 sm:p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] sm:text-xs font-semibold flex items-start gap-2 shadow">
+                    <span>💡</span>
+                    <div className="flex-1">
+                      <strong className="text-white">Natural English tip:</strong> Native speakers say <strong className="text-amber-200">"{aiCoachingTip.betterPhrase}"</strong> ({aiCoachingTip.tip}).
+                    </div>
+                    <button
+                      onClick={() => setAiCoachingTip(null)}
+                      className="text-amber-300/70 hover:text-white p-0.5"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+
+                {/* Live Subtitle Transcript Banner */}
+                <div className="p-2.5 sm:p-3.5 rounded-2xl bg-black/80 border border-white/20 backdrop-blur-xl shadow-2xl text-center">
+                  {aiSpokenText ? (
+                    <p className="text-xs sm:text-sm font-semibold text-white leading-relaxed line-clamp-3">
+                      « {aiSpokenText} »
+                    </p>
+                  ) : (
+                    <p className="text-xs text-slate-400 italic">
+                      {isFr ? 'Initialisation de la session vocale...' : 'Starting spoken session...'}
+                    </p>
+                  )}
+
+                  {userSpokenText && (
+                    <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between gap-2 text-[11px] sm:text-xs text-teal-300 font-mono text-left">
+                      <span className="truncate">🎙️ You: "{userSpokenText}"</span>
+                      <button
+                        type="button"
+                        onClick={() => handleUserFinishedSpeaking(userSpokenText)}
+                        className="px-2 py-0.5 rounded bg-teal-500/30 hover:bg-teal-500/50 text-white font-bold text-[10px] shrink-0 cursor-pointer"
+                      >
+                        Send →
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          ) : (
+            /* ============================================================== */
+            /* PEER PARTNER WEBRTC SCREEN                                     */
+            /* ============================================================== */
+            <>
+              {/* Live Video Stream from Partner */}
+              <video
+                ref={(el) => {
+                  remoteVideoRef.current = el;
+                  if (el && remoteMediaStreamRef.current && remoteMediaStreamRef.current.getTracks().length > 0) {
+                    if (el.srcObject !== remoteMediaStreamRef.current) {
+                      el.srcObject = remoteMediaStreamRef.current;
+                    }
+                    el.play().catch(() => {});
+                  }
+                }}
+                autoPlay
+                playsInline
+                muted
+                className={`w-full h-full object-cover absolute inset-0 transition-opacity duration-500 ${hasRemoteStream ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none'}`}
+              />
+
+              {/* Fallback & Waiting Avatar Interface */}
+              <div className="relative z-0 flex flex-col items-center text-center">
+                {partnerProfile?.avatar_url ? (
+                  <div className="relative">
+                    <img
+                      src={partnerProfile.avatar_url}
+                      alt={partnerName}
+                      className="w-24 h-24 sm:w-36 sm:h-36 rounded-full object-cover ring-4 ring-emerald-400/60 shadow-[0_0_40px_rgba(74,222,128,0.3)]"
+                    />
+                    <span className="absolute bottom-1 right-1 sm:bottom-2 sm:right-2 w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-[#060a14] border border-white/20 flex items-center justify-center text-xs sm:text-sm shadow">
+                      {partnerProfile.flag || '🌐'}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="w-24 h-24 sm:w-36 sm:h-36 rounded-full bg-gradient-to-tr from-emerald-500/20 to-teal-400/10 border-2 border-emerald-400/40 flex items-center justify-center text-2xl sm:text-4xl font-black text-emerald-300 shadow-[0_0_30px_rgba(74,222,128,0.2)]">
+                    {partnerName ? partnerName.charAt(0).toUpperCase() : 'P'}
+                  </div>
+                )}
+
+                <p className="mt-3 sm:mt-4 text-base sm:text-lg font-black text-white flex items-center gap-2">
+                  <span>{partnerName}</span>
+                  <span>{partnerProfile?.flag || '🌐'}</span>
+                </p>
+
+                {/* Contextual Status Badge */}
+                <div className="text-[11px] sm:text-xs font-semibold flex items-center gap-1.5 mt-2">
+                  {callStatus === 'connected' ? (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                      <span className="text-emerald-400 font-bold">{isFr ? '🟢 En direct • Connecté' : '🟢 Live • Connected'}</span>
+                    </>
+                  ) : callStatus === 'declined' ? (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-rose-500" />
+                      <span className="text-rose-400 font-bold">{isFr ? 'Appel refusé / Indisponible' : 'Call declined / Unavailable'}</span>
+                    </>
+                  ) : callStatus === 'calling' ? (
+                    <>
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
+                      <span className="text-amber-300 font-medium">
+                        {isFr ? 'Sonnerie chez le partenaire (signal & alerte Push envoyés)...' : 'Ringing partner (signal & Push alert sent)...'}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-pulse" />
+                      <span className="text-teal-300 font-medium">
+                        {isFr ? 'Connexion au flux vidéo/audio...' : 'Connecting live stream...'}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="absolute bottom-3 left-3 sm:bottom-6 sm:left-6 z-20 flex items-center gap-2">
+                <span className="px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-black/70 border border-white/20 text-white font-bold text-[11px] sm:text-xs backdrop-blur-md">
+                  {partnerName} {partnerProfile?.current_level ? `(${partnerProfile.current_level})` : ''}
+                </span>
+                {callStatus === 'connected' && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Local User Screen (Mobile Floating PiP / Desktop 2nd column) */}
@@ -1183,46 +1576,48 @@ function CallContent() {
           </div>
         </div>
 
-        {/* Floating AI Coach Discussion Prompt Overlay */}
-        <div className="absolute bottom-2 left-2 right-2 md:bottom-4 md:left-1/2 md:-translate-x-1/2 md:w-11/12 max-w-xl z-20 pointer-events-auto">
-          <div className="p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-[#060a14]/95 border border-emerald-400/40 backdrop-blur-2xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] flex items-start gap-2 sm:gap-3">
-            <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400 shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[9px] sm:text-[11px] font-extrabold uppercase tracking-wider text-emerald-300">
-                  {isFr ? 'Idée de sujet de conversation' : 'Conversation topic suggestion'}
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-                        window.speechSynthesis.cancel();
-                        const utt = new SpeechSynthesisUtterance(DISCUSSION_PROMPTS[currentPromptIndex]);
-                        utt.lang = 'en-US';
-                        utt.rate = 0.95;
-                        window.speechSynthesis.speak(utt);
-                        playSound('chime');
-                      }
-                    }}
-                    title={isFr ? "Écouter la prononciation" : "Listen to pronunciation"}
-                    className="p-1 rounded-md text-emerald-300 hover:text-white hover:bg-emerald-500/20 transition-all cursor-pointer"
-                  >
-                    <Volume2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => setCurrentPromptIndex(idx => (idx + 1) % DISCUSSION_PROMPTS.length)}
-                    className="text-[10px] text-slate-400 hover:text-white underline cursor-pointer"
-                  >
-                    {isFr ? 'Suivant →' : 'Next →'}
-                  </button>
+        {/* Floating AI Coach Discussion Prompt Overlay for Peer Calls */}
+        {!isAiCall && (
+          <div className="absolute bottom-2 left-2 right-2 md:bottom-4 md:left-1/2 md:-translate-x-1/2 md:w-11/12 max-w-xl z-20 pointer-events-auto">
+            <div className="p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-[#060a14]/95 border border-emerald-400/40 backdrop-blur-2xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] flex items-start gap-2 sm:gap-3">
+              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[9px] sm:text-[11px] font-extrabold uppercase tracking-wider text-emerald-300">
+                    {isFr ? 'Idée de sujet de conversation' : 'Conversation topic suggestion'}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                          window.speechSynthesis.cancel();
+                          const utt = new SpeechSynthesisUtterance(DISCUSSION_PROMPTS[currentPromptIndex]);
+                          utt.lang = 'en-US';
+                          utt.rate = 0.95;
+                          window.speechSynthesis.speak(utt);
+                          playSound('chime');
+                        }
+                      }}
+                      title={isFr ? "Écouter la prononciation" : "Listen to pronunciation"}
+                      className="p-1 rounded-md text-emerald-300 hover:text-white hover:bg-emerald-500/20 transition-all cursor-pointer"
+                    >
+                      <Volume2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setCurrentPromptIndex(idx => (idx + 1) % DISCUSSION_PROMPTS.length)}
+                      className="text-[10px] text-slate-400 hover:text-white underline cursor-pointer"
+                    >
+                      {isFr ? 'Suivant →' : 'Next →'}
+                    </button>
+                  </div>
                 </div>
+                <p className="text-xs sm:text-sm font-semibold text-white leading-relaxed line-clamp-2 sm:line-clamp-none">
+                  « {DISCUSSION_PROMPTS[currentPromptIndex]} »
+                </p>
               </div>
-              <p className="text-xs sm:text-sm font-semibold text-white leading-relaxed line-clamp-2 sm:line-clamp-none">
-                « {DISCUSSION_PROMPTS[currentPromptIndex]} »
-              </p>
             </div>
           </div>
-        </div>
+        )}
 
       </div>
 
@@ -1255,18 +1650,86 @@ function CallContent() {
           {videoActive ? <Video className="w-4 h-4 sm:w-5 sm:h-5" /> : <VideoOff className="w-4 h-4 sm:w-5 sm:h-5" />}
         </button>
 
-        {/* Toggle Screen Share */}
-        <button
-          onClick={toggleScreenShare}
-          className={`p-2.5 xs:p-3 sm:p-4 rounded-xl sm:rounded-2xl transition-all cursor-pointer ${
-            isScreenSharing
-              ? 'bg-blue-500 text-white'
-              : 'bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-white/10 dark:hover:bg-white/15 dark:text-white'
-          }`}
-          title={isFr ? "Partager l'écran" : "Share screen"}
-        >
-          <Share2 className="w-4 h-4 sm:w-5 sm:h-5" />
-        </button>
+        {/* AI Voice Interactive Speak/Send Button */}
+        {isAiCall && (
+          <button
+            onClick={() => {
+              if (isAiSpeaking) {
+                stopSpeaking();
+                setIsAiSpeaking(false);
+                startSpeechRecognition();
+              } else if (userSpokenText) {
+                handleUserFinishedSpeaking(userSpokenText);
+              } else {
+                startSpeechRecognition();
+              }
+            }}
+            className={`px-3 sm:px-4 py-2.5 xs:py-3 sm:py-4 rounded-xl sm:rounded-2xl transition-all cursor-pointer font-bold text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2 shadow ${
+              isAiSpeaking
+                ? 'bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30'
+                : isListeningUser
+                ? 'bg-emerald-500 hover:bg-emerald-600 text-slate-950 shadow-[0_0_20px_rgba(16,185,129,0.4)] animate-pulse'
+                : 'bg-white/10 hover:bg-white/20 text-white'
+            }`}
+            title={isAiSpeaking ? "Skip Emma's speech" : "Tap to speak or send"}
+          >
+            {isAiSpeaking ? (
+              <>
+                <VolumeX className="w-4 h-4" />
+                <span>{isFr ? 'Passer' : 'Skip'}</span>
+              </>
+            ) : isListeningUser ? (
+              <>
+                <Send className="w-4 h-4 fill-slate-950" />
+                <span>{isFr ? 'Envoyer' : 'Send'}</span>
+              </>
+            ) : (
+              <>
+                <Mic className="w-4 h-4" />
+                <span>{isFr ? 'Parler' : 'Speak'}</span>
+              </>
+            )}
+          </button>
+        )}
+
+        {/* Replay Emma's Speech Button */}
+        {isAiCall && aiSpokenText && (
+          <button
+            onClick={() => {
+              if (aiSpokenText) {
+                stopSpeaking();
+                setIsAiSpeaking(true);
+                speakEnglishText(
+                  aiSpokenText,
+                  () => setIsAiSpeaking(true),
+                  () => {
+                    setIsAiSpeaking(false);
+                    startSpeechRecognition();
+                  }
+                );
+              }
+            }}
+            className="p-2.5 xs:p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer"
+            title={isFr ? "Réécouter Emma" : "Replay Emma's speech"}
+          >
+            <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
+          </button>
+        )}
+
+        {/* Toggle Screen Share (for peer calls) */}
+        {!isAiCall && (
+          <button
+            onClick={toggleScreenShare}
+            className={`p-2.5 xs:p-3 sm:p-4 rounded-xl sm:rounded-2xl transition-all cursor-pointer ${
+              isScreenSharing
+                ? 'bg-blue-500 text-white'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-white/10 dark:hover:bg-white/15 dark:text-white'
+            }`}
+            title={isFr ? "Partager l'écran" : "Share screen"}
+          >
+            <Share2 className="w-4 h-4 sm:w-5 sm:h-5" />
+          </button>
+        )}
 
         {/* End Call Button */}
         <button

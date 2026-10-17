@@ -59,7 +59,7 @@ import {
   stopBrowserBarNotification, 
   showDesktopNotification 
 } from '@/lib/browserNotifications';
-import { EMMA_AI_PARTNER, generateEmmaAIResponse, AI_TOPIC_STARTERS } from '@/lib/aiAgent';
+import { EMMA_AI_PARTNER, generateEmmaAIResponse, AI_TOPIC_STARTERS, synthesizeEmmaVoiceNote } from '@/lib/aiAgent';
 import type { Database } from '@/lib/database.types';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -207,6 +207,7 @@ function RealConversationContent() {
   const [inputText, setInputText] = useState('');
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [isAiTyping, setIsAiTyping] = useState(false);
+  const [aiVoiceNotesEnabled, setAiVoiceNotesEnabled] = useState(true);
   
   // Periodic timer to re-evaluate heartbeat freshness every 15s in real time
   useEffect(() => {
@@ -1324,12 +1325,13 @@ function RealConversationContent() {
     setGrammarSuggestion(null);
     setShowEmojiPicker(false);
 
-    // If chatting with Emma AI Coach, generate natural conversational reply with grammar coaching
+    // If chatting with Emma AI Coach, generate natural conversational reply with voice message
     if (activePartner.id === 'eb-ai-coach' || activePartner.is_ai) {
       setIsAiTyping(true);
       (async () => {
         try {
           let aiReplyText = '';
+          let aiAudioUrl: string | null = null;
           try {
             const res = await fetch('/api/ai/chat', {
               method: 'POST',
@@ -1341,22 +1343,35 @@ function RealConversationContent() {
                   content: m.text,
                 })),
                 userLevel: profile?.current_level || 'B1',
+                includeAudio: aiVoiceNotesEnabled,
               }),
             });
             if (res.ok) {
               const data = await res.json();
               if (data?.reply) aiReplyText = data.reply;
+              if (data?.audioUrl) aiAudioUrl = data.audioUrl;
             }
           } catch (fetchErr) {
             console.warn('AI API fetch fallback:', fetchErr);
           }
 
           if (!aiReplyText) {
-            aiReplyText = generateEmmaAIResponse(textToSend, profile?.current_level || 'B1');
+            aiReplyText = generateEmmaAIResponse(
+              textToSend, 
+              updatedWithUser.slice(-8).map(m => ({
+                role: m.sender_id === 'eb-ai-coach' ? 'assistant' : 'user',
+                content: m.text,
+              })), 
+              profile?.current_level || 'B1'
+            );
+          }
+
+          if (aiVoiceNotesEnabled && !aiAudioUrl) {
+            aiAudioUrl = await synthesizeEmmaVoiceNote(aiReplyText);
           }
 
           // Natural human-like conversational typing delay
-          const delay = Math.min(1500, Math.max(600, aiReplyText.length * 10));
+          const delay = Math.min(1400, Math.max(500, aiReplyText.length * 8));
           await new Promise(r => setTimeout(r, delay));
 
           const emmaMessage: ChatMessage = {
@@ -1365,6 +1380,7 @@ function RealConversationContent() {
             sender_name: 'Emma AI • English Coach',
             sender_avatar: EMMA_AI_PARTNER.avatar,
             text: aiReplyText,
+            audio_url: aiAudioUrl || undefined,
             created_at: new Date().toISOString(),
             status: 'read',
           };
@@ -1580,6 +1596,52 @@ function RealConversationContent() {
             saveConversation(nextMap);
             return nextMap;
           });
+
+          // If sending voice note to Emma AI, trigger an authentic spoken voice reply!
+          if (targetPartnerId === 'eb-ai-coach' || activePartner?.is_ai) {
+            setIsAiTyping(true);
+            (async () => {
+              try {
+                const voiceReplyPrompts = [
+                  "I loved listening to your voice note! Your pronunciation is getting clearer and more natural. Speaking out loud like this is the #1 secret to fluent English. Here is my voice note back to you — how did it feel recording your voice?",
+                  "Fantastic job speaking out loud! I can hear your confidence growing. Recording voice notes is such great practice. Here is my voice message for you — tell me, what was the most interesting part of your day?",
+                  "Great voice note! Your rhythm and intonation are sounding very natural. Speaking without fear is how true fluency happens. What other topics would you like to practice speaking about with me today?",
+                ];
+                const voiceReplyText = voiceReplyPrompts[Math.floor(Math.random() * voiceReplyPrompts.length)];
+                let aiAudioUrl: string | null = null;
+                try {
+                  aiAudioUrl = await synthesizeEmmaVoiceNote(voiceReplyText);
+                } catch {}
+
+                await new Promise(r => setTimeout(r, 1400));
+
+                const emmaVoiceMsg: ChatMessage = {
+                  id: `emma_voice_${Date.now()}`,
+                  sender_id: 'eb-ai-coach',
+                  sender_name: 'Emma AI • English Coach',
+                  sender_avatar: EMMA_AI_PARTNER.avatar,
+                  text: voiceReplyText,
+                  audio_url: aiAudioUrl || undefined,
+                  created_at: new Date().toISOString(),
+                  status: 'read',
+                };
+
+                setConversationMap(prev => {
+                  const current = prev['eb-ai-coach'] || [];
+                  const updated = [...current, emmaVoiceMsg];
+                  const m = { ...prev, ['eb-ai-coach']: updated };
+                  saveConversation(m);
+                  return m;
+                });
+
+                playSound?.('chime');
+              } catch (e) {
+                console.warn('AI voice response error:', e);
+              } finally {
+                setIsAiTyping(false);
+              }
+            })();
+          }
 
           // Immediately signal partner via background Web Push & Realtime notification (even if offline / app closed)
           try {
@@ -2611,7 +2673,27 @@ function RealConversationContent() {
                 </div>
 
                 {/* WhatsApp Action Icons (Video, Audio, Options) */}
-                <div className="flex items-center gap-0.5 sm:gap-1.5 text-[#aebac1] shrink-0">
+                <div className="flex items-center gap-1 sm:gap-2 text-[#aebac1] shrink-0">
+                  {/* AI Voice Toggle when chatting with Emma */}
+                  {activePartner.is_ai && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playSound?.('click');
+                        setAiVoiceNotesEnabled(!aiVoiceNotesEnabled);
+                      }}
+                      className={`px-2 sm:px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all flex items-center gap-1 cursor-pointer ${
+                        aiVoiceNotesEnabled
+                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                          : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                      }`}
+                      title={isFr ? "Activer ou désactiver les messages vocaux de l'IA" : "Toggle AI voice notes on/off"}
+                    >
+                      <span>🎙️</span>
+                      <span className="hidden xs:inline">{isFr ? (aiVoiceNotesEnabled ? 'Vocaux IA: ON' : 'Vocaux IA: OFF') : (aiVoiceNotesEnabled ? 'AI Voice: ON' : 'AI Voice: OFF')}</span>
+                    </button>
+                  )}
+
                   {/* WhatsApp Video Call */}
                   <button
                     type="button"
