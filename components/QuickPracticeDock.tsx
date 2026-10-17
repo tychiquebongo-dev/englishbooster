@@ -58,9 +58,9 @@ export default function QuickPracticeDock() {
     },
     {
       href: '/status',
-      label: 'Status & Stories',
+      label: 'Status',
       icon: Flame,
-      badge: 'NEW',
+      badge: 'STATUS',
       badgeClass: 'bg-amber-500 text-slate-950 font-black',
       glow: 'hover:shadow-[0_0_20px_rgba(245,158,11,0.4)]',
       color: 'text-amber-400 group-hover:text-amber-300',

@@ -301,7 +301,7 @@ export default function HeroInteractiveHub() {
               }`}
             >
               <Flame className="w-3.5 h-3.5 shrink-0" />
-              <span>{isFr ? 'Statuts' : 'Stories'}</span>
+              <span>{isFr ? 'Statuts' : 'Status'}</span>
             </button>
 
             <button

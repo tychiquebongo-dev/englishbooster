@@ -172,7 +172,7 @@ export default function Navbar() {
     { href: '/partners', label: 'Partners' },
     { href: '/live', label: 'Live Rooms' },
     { href: '/chat', label: 'Chat' },
-    { href: '/status', label: 'Stories' },
+    { href: '/status', label: 'Status' },
     { href: '/pricing', label: 'Pricing' },
   ];
 
