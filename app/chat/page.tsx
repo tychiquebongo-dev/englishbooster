@@ -48,7 +48,8 @@ import {
   Reply,
   WifiOff,
   X,
-  CornerDownRight
+  CornerDownRight,
+  Sparkles
 } from 'lucide-react';
 import Link from 'next/link';
 import InvitePartnerModal from '@/components/InvitePartnerModal';
