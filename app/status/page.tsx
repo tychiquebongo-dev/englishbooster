@@ -531,21 +531,39 @@ export default function StatusSpacePage() {
         <div className="flex items-center gap-2.5">
           <Sparkles className="w-5 h-5 text-emerald-400" />
           <h2 className="text-lg font-black text-slate-900 dark:text-white">
-            {isFr ? 'Comment tirer le meilleur parti de vos statuts ?' : 'How to get the most out of your statuses?'}
+            {isFr ? 'Comment tirer le meilleur parti de vos statuts ?' : 'How to get the most out of your status?'}
           </h2>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-slate-600 dark:text-slate-300">
           <div className="p-4 rounded-2xl bg-white/50 dark:bg-black/30 border border-white/20">
-            <span className="font-bold text-emerald-500 block mb-1">1. Format Court & Impactant</span>
-            <p>Partagez une citation, une tournure idiomatique ou une phrase que vous venez d'apprendre aujourd'hui.</p>
+            <span className="font-bold text-emerald-500 block mb-1">
+              {isFr ? '1. Format Court & Impactant' : '1. Short & Impactful Format'}
+            </span>
+            <p>
+              {isFr 
+                ? "Partagez une citation, une tournure idiomatique ou une phrase que vous venez d'apprendre aujourd'hui."
+                : "Share a quote, an idiom, or a useful phrase you learned today."}
+            </p>
           </div>
           <div className="p-4 rounded-2xl bg-white/50 dark:bg-black/30 border border-white/20">
-            <span className="font-bold text-teal-400 block mb-1">2. Osez les Vidéos Stories</span>
-            <p>Filmez-vous 15 secondes en parlant anglais. C'est l'exercice n°1 pour briser la timidité et gagner en aisance.</p>
+            <span className="font-bold text-teal-400 block mb-1">
+              {isFr ? '2. Osez les Vidéos Stories' : '2. Try Video Stories'}
+            </span>
+            <p>
+              {isFr 
+                ? "Filmez-vous 15 secondes en parlant anglais. C'est l'exercice n°1 pour briser la timidité et gagner en aisance."
+                : "Record yourself speaking English for 15 seconds. It's the #1 exercise to overcome shyness and build fluency."}
+            </p>
           </div>
           <div className="p-4 rounded-2xl bg-white/50 dark:bg-black/30 border border-white/20">
-            <span className="font-bold text-blue-400 block mb-1">3. Réagissez aux Autres</span>
-            <p>Aimez et répondez aux statuts des autres membres pour trouver vos futurs binômes de conversation vocale !</p>
+            <span className="font-bold text-blue-400 block mb-1">
+              {isFr ? '3. Réagissez aux Autres' : '3. Engage with Others'}
+            </span>
+            <p>
+              {isFr 
+                ? "Aimez et répondez aux statuts des autres membres pour trouver vos futurs binômes de conversation vocale !"
+                : "Like and comment on fellow members' statuses to find your future speaking practice partners!"}
+            </p>
           </div>
         </div>
       </div>
