@@ -24,7 +24,8 @@ import {
   Volume2,
   Camera,
   Upload,
-  Radio
+  Radio,
+  Download
 } from 'lucide-react';
 import InvitePartnerModal from '@/components/InvitePartnerModal';
 import AvatarUploaderModal from '@/components/AvatarUploaderModal';
@@ -216,8 +217,17 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Quick Actions (Call, Status, Plan) */}
+        {/* Quick Actions (Call, Status, Plan, Download App) */}
         <div className="flex flex-col xs:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+          <Link
+            href="/download"
+            onClick={() => playSound('click')}
+            className="px-3.5 sm:px-4 py-3 sm:py-3.5 rounded-xl font-bold text-cyan-300 bg-cyan-500/15 border border-cyan-500/30 hover:bg-cyan-500/25 transition-all flex items-center justify-center gap-2 text-xs sm:text-sm shadow-sm"
+          >
+            <Download className="w-4 h-4 text-cyan-400" />
+            <span>{isFr ? '📲 Installer l\'App' : '📲 Get App'}</span>
+          </Link>
+
           <Link
             href="/status"
             onClick={() => playSound('click')}
@@ -246,6 +256,34 @@ export default function DashboardPage() {
           </Link>
         </div>
 
+      </div>
+
+      {/* Cross-Platform App Banner */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-cyan-950/40 via-blue-950/30 to-slate-900 border border-cyan-500/25 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg">
+        <div className="flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center shrink-0 shadow-inner">
+            <Download className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-white">
+              {isFr ? "Installez l'Application English Booster sur votre PC et Mobile" : "Install English Booster App on your PC & Mobile"}
+            </h3>
+            <p className="text-xs text-slate-400">
+              {isFr
+                ? "Lancement en 1 clic sans passer par le navigateur, sonnerie persistante pour ne rater aucun appel en direct !"
+                : "1-Click launch without opening a browser, persistent ringing to never miss a live partner call!"}
+            </p>
+          </div>
+        </div>
+
+        <Link
+          href="/download"
+          onClick={() => playSound('click')}
+          className="py-2.5 px-5 rounded-2xl font-black text-xs text-slate-950 bg-gradient-to-r from-cyan-400 to-blue-400 hover:opacity-95 shadow-md flex items-center gap-2 shrink-0 transition-all hover:scale-102"
+        >
+          <span>{isFr ? "Télécharger / Installer" : "Download / Install"}</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </Link>
       </div>
 
       {/* METRIC CARDS */}

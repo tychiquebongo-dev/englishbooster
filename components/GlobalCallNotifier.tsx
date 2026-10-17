@@ -98,6 +98,10 @@ export default function GlobalCallNotifier() {
     const handleBeforeInstallPrompt = (e: any) => {
       e.preventDefault();
       setDeferredPrompt(e);
+      if (typeof window !== 'undefined') {
+        (window as any).__eb_install_prompt = e;
+        window.dispatchEvent(new CustomEvent('eb_install_prompt_ready'));
+      }
       setShowPermissionPrompt(true);
     };
 

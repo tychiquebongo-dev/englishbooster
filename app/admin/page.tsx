@@ -38,7 +38,8 @@ import {
   DollarSign,
   Activity,
   Layers,
-  ChevronRight
+  ChevronRight,
+  Download
 } from 'lucide-react';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -468,6 +469,15 @@ export default function AdminBackOfficePage() {
             <RefreshCw className="w-3.5 h-3.5" />
             <span>{isFr ? "Actualiser" : "Refresh"}</span>
           </button>
+
+          <Link
+            href="/download"
+            onClick={() => playSound('click')}
+            className="px-4 py-2.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-700 dark:text-cyan-300 text-xs font-bold transition-all flex items-center gap-2 shadow-sm"
+          >
+            <Download className="w-3.5 h-3.5 text-cyan-500" />
+            <span>{isFr ? "📲 Télécharger l'App (Mobile & PC)" : "📲 Download App (Mobile & PC)"}</span>
+          </Link>
 
           <Link
             href="/"

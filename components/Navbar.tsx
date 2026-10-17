@@ -21,8 +21,10 @@ import {
   ShieldCheck,
   Tv,
   Trophy,
-  Settings
+  Settings,
+  Download
 } from 'lucide-react';
+import DownloadAppModal from '@/components/DownloadAppModal';
 
 // ============================================================================
 // RESILIENT NAVBAR AVATAR COMPONENT
@@ -112,6 +114,7 @@ export default function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
 
   const navRef = useRef<HTMLElement>(null);
 
@@ -247,6 +250,20 @@ export default function Navbar() {
                 );
               })}
 
+              {/* Desktop App Install Pill */}
+              <button
+                type="button"
+                onClick={() => {
+                  playSound?.('click');
+                  setDownloadModalOpen(true);
+                }}
+                className="hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 transition-all hover:scale-105 cursor-pointer shadow-sm"
+                title="Installer l'Application sur PC ou Mobile"
+              >
+                <Download className="w-3.5 h-3.5 text-cyan-400" />
+                <span>App</span>
+              </button>
+
               {/* Admin Hub Link (if admin) */}
               {isUserAdmin && (
                 <Link
@@ -340,6 +357,19 @@ export default function Navbar() {
                               <span>Admin Back Office</span>
                             </Link>
                           )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUserDropdownOpen(false);
+                              setDownloadModalOpen(true);
+                              playSound?.('click');
+                            }}
+                            className="flex items-center gap-2 px-3 py-2 rounded-xl hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors text-emerald-400 w-full text-left cursor-pointer"
+                          >
+                            <Download className="w-4 h-4 text-emerald-400" />
+                            <span>Install App (PC & Mobile)</span>
+                          </button>
                         </div>
 
                         <div className="border-t border-white/10 mt-2 pt-1.5">
@@ -479,6 +509,20 @@ export default function Navbar() {
                   <span>Admin Back Office</span>
                 </Link>
               )}
+
+              {/* Install App button in Mobile Menu */}
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  setDownloadModalOpen(true);
+                  playSound?.('click');
+                }}
+                className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all text-left w-full cursor-pointer mt-1"
+              >
+                <Download className="w-4 h-4 text-emerald-400" />
+                <span>Installer l'App (Mobile & PC)</span>
+              </button>
             </div>
 
             {/* Mobile Footer CTA */}
@@ -518,6 +562,12 @@ export default function Navbar() {
         )}
 
       </div>
+
+      {/* Global Cross-Platform App Installation Modal */}
+      <DownloadAppModal 
+        isOpen={downloadModalOpen} 
+        onClose={() => setDownloadModalOpen(false)} 
+      />
     </header>
   );
 }
