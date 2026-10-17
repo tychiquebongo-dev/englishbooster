@@ -145,6 +145,18 @@ function CallContent() {
   const handleRemoteHangupRef = useRef(handleRemoteHangup);
   handleRemoteHangupRef.current = handleRemoteHangup;
 
+  // When callee arrives (via autoAnswer from phone notification or direct answer), stop local ringtone & vibration immediately
+  useEffect(() => {
+    if (isAutoAnswer || !isCaller) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('eb_call_answered', { detail: { roomId } }));
+      }
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        try { navigator.vibrate(0); } catch {}
+      }
+    }
+  }, [isAutoAnswer, isCaller, roomId]);
+
   // 1. Fetch partner profile from database
   useEffect(() => {
     if (!partnerId) return;
@@ -442,6 +454,22 @@ function CallContent() {
             handleRemoteHangupRef.current();
             break;
 
+          case 'call_answered':
+            console.log('Partner answered call, switching status to connecting');
+            setCallStatus((prev) => (prev === 'calling' ? 'connecting' : prev));
+            if (isCaller && currentPC.signalingState === 'have-local-offer' && currentPC.localDescription) {
+              channelRef.current?.send({
+                type: 'broadcast',
+                event: 'webrtc_signal',
+                payload: {
+                  type: 'offer',
+                  sdp: currentPC.localDescription,
+                  from: user.id,
+                },
+              });
+            }
+            break;
+
           case 'partner_ready':
             console.log('Partner ready in room. Current signaling state:', currentPC.signalingState);
             if (isCaller) {
@@ -593,6 +621,15 @@ function CallContent() {
               event: 'webrtc_signal',
               payload: { type: 'partner_ready', from: user.id },
             });
+
+            // If callee (auto-answered from background notification or direct answer), inform caller immediately
+            if (isAutoAnswer || !isCaller) {
+              roomChannel.send({
+                type: 'broadcast',
+                event: 'webrtc_signal',
+                payload: { type: 'call_answered', from: user.id, roomId },
+              });
+            }
 
             // If caller, create and broadcast initial offer immediately
             if (isCaller && pcRef.current) {

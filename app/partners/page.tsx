@@ -2,12 +2,14 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { useTranslation } from '@/lib/i18n';
 import { getUserAvatar } from '@/lib/avatarHelper';
 import { isRealPartnerProfile } from '@/lib/partnerHelper';
 import { EMMA_AI_PARTNER } from '@/lib/aiAgent';
+import { broadcastIncomingCall } from '@/lib/callSignaling';
 import type { Database } from '@/lib/database.types';
 import { 
   Users, 
@@ -67,6 +69,7 @@ export interface RegisteredMemberShort {
 }
 
 export default function PartnersPage() {
+  const router = useRouter();
   const { user, profile, playSound } = useAuth();
   const { isFr } = useTranslation();
   const supabase = createClient();
@@ -80,6 +83,35 @@ export default function PartnersPage() {
   const [selectedInterest, setSelectedInterest] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONLINE' | 'OFFLINE'>('ALL');
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
+
+  // Directly initiate call and immediately ring partner's phone & wake notification
+  const handleCallPartner = (e: React.MouseEvent, partner: DisplayPartner) => {
+    e.preventDefault();
+    playSound('call');
+
+    if (partner.is_ai) {
+      router.push(`/call?partnerId=eb-ai-coach&partnerName=${encodeURIComponent(partner.name)}&video=true&ai=true`);
+      return;
+    }
+
+    const roomId = `room_${user?.id ? [user.id, partner.id].sort().join('_') : partner.id}_${Date.now()}`;
+
+    // Immediately trigger background Web Push and Realtime notifications to ring partner's phone
+    if (user?.id) {
+      broadcastIncomingCall({
+        callerId: user.id,
+        callerName: profile?.full_name || 'English Learner',
+        callerAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
+        callerFlag: profile?.flag || '🌐',
+        callerLevel: profile?.current_level || 'B2',
+        receiverId: partner.id,
+        roomId: roomId,
+        isVideo: true,
+      }).catch((err) => console.warn('Partner immediate call broadcast error:', err));
+    }
+
+    router.push(`/call?partnerId=${partner.id}&partnerName=${encodeURIComponent(partner.name)}&video=true&roomId=${roomId}`);
+  };
 
   useEffect(() => {
     const fetchRegisteredPartners = async () => {
@@ -775,10 +807,10 @@ export default function PartnersPage() {
                         <span>{partner.is_ai ? (isFr ? '💬 Dialoguer (IA)' : '💬 Chat (AI)') : (isFr ? 'Écrire' : 'Message')}</span>
                       </Link>
 
-                      <Link
-                        href={`/call?partnerId=${partner.id}&partnerName=${encodeURIComponent(partner.name)}&video=true&roomId=room_${user?.id ? [user.id, partner.id].sort().join('_') : partner.id}_${Date.now()}`}
-                        onClick={() => playSound('call')}
-                        className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md ${
+                      <button
+                        type="button"
+                        onClick={(e) => handleCallPartner(e, partner)}
+                        className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md cursor-pointer ${
                           partner.is_ai
                             ? 'bg-gradient-to-r from-violet-600 via-fuchsia-600 to-cyan-500 hover:opacity-95 text-white shadow-[0_0_15px_rgba(168,85,247,0.35)]'
                             : 'bg-gradient-to-r from-emerald-500 to-teal-400 dark:from-emerald-400 dark:to-teal-300 hover:opacity-95 text-slate-950 shadow-[0_0_15px_rgba(74,222,128,0.25)]'
@@ -786,7 +818,7 @@ export default function PartnersPage() {
                       >
                         <PhoneCall className="w-3.5 h-3.5" />
                         <span>{partner.is_ai ? (isFr ? '🎙️ Parler Oral (IA)' : '🎙️ Oral Voice (AI)') : (isFr ? 'Appeler' : 'Call')}</span>
-                      </Link>
+                      </button>
                     </div>
 
                   </div>

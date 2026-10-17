@@ -73,10 +73,39 @@ export default function GlobalCallNotifier() {
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Listen to Service Worker messages when user answers or declines call from phone notification outside app
+    const handleSwMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'eb_answer_call' && event.data.url) {
+        stopRinging();
+        setIncomingCall(null);
+        router.push(event.data.url);
+      } else if (event.data?.type === 'eb_incoming_call_push' && event.data.callData) {
+        handleTriggerIncomingCall(event.data.callData);
+      } else if (event.data?.type === 'eb_call_declined_from_sw') {
+        stopRinging();
+        setIncomingCall(null);
+      }
+    };
+
+    const handleCallAnsweredEvent = () => {
+      stopRinging();
+      setIncomingCall(null);
+    };
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    }
+    window.addEventListener('eb_call_answered', handleCallAnsweredEvent);
+
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      }
+      window.removeEventListener('eb_call_answered', handleCallAnsweredEvent);
     };
-  }, [user?.id]);
+  }, [user?.id, router]);
 
   // Device physical vibration trigger
   const triggerVibration = (pattern: number | number[]) => {
@@ -142,10 +171,10 @@ export default function GlobalCallNotifier() {
             requireInteraction: true,
             renotify: true,
             silent: false,
-            vibrate: [500, 250, 500, 250, 1000, 500, 1000, 500, 1000],
+            vibrate: [1000, 400, 1000, 400, 1000, 400, 1000],
             actions: [
-              { action: 'answer', title: payload.isVideo ? '📹 Décrocher' : '📞 Décrocher' },
-              { action: 'decline', title: '❌ Refuser' }
+              { action: 'answer', title: payload.isVideo ? '📹 Décrocher / Answer' : '📞 Décrocher / Answer' },
+              { action: 'decline', title: '❌ Refuser / Decline' }
             ]
           } as any);
           return;
@@ -166,6 +195,8 @@ export default function GlobalCallNotifier() {
       notif.onclick = () => {
         window.focus();
         notif.close();
+        stopRinging();
+        setIncomingCall(null);
         router.push(callUrl);
       };
 
@@ -295,7 +326,7 @@ export default function GlobalCallNotifier() {
     incomingCallRef.current = payload;
     setIncomingCall(payload);
     playSoundRef.current('call');
-    triggerVibration([500, 250, 500, 250, 1000]);
+    triggerVibration([1000, 400, 1000, 400, 1000, 400, 1000]);
 
     // 1. Dynamic flashing notification in partner's browser bar (onglet & taskbar)
     notifyBrowserBar({
@@ -311,7 +342,7 @@ export default function GlobalCallNotifier() {
     if (ringIntervalRef.current) clearInterval(ringIntervalRef.current);
     ringIntervalRef.current = setInterval(() => {
       playSoundRef.current('call');
-      triggerVibration([500, 250, 500, 250, 1000]);
+      triggerVibration([1000, 400, 1000, 400, 1000, 400, 1000]);
     }, 2800);
 
     // Auto dismiss after 45s as missed call if not answered

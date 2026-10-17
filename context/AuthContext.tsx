@@ -195,23 +195,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           osc.stop(now + 0.4);
         });
       } else if (type === 'call') {
-        const osc1 = ctx.createOscillator();
-        const osc2 = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc1.frequency.setValueAtTime(440, now);
-        osc2.frequency.setValueAtTime(480, now);
-        gain.gain.setValueAtTime(0.08, now);
-        gain.gain.linearRampToValueAtTime(0, now + 0.9);
-        osc1.connect(gain);
-        osc2.connect(gain);
-        gain.connect(ctx.destination);
-        osc1.onended = () => {
-          try { osc1.disconnect(); osc2.disconnect(); gain.disconnect(); } catch {}
+        // Dual-tone European/US phone ring cadence: 440Hz + 480Hz (audible volume 0.35)
+        // Burst 1: 0 to 0.4s, Pause: 0.4s to 0.55s, Burst 2: 0.55s to 0.95s
+        const playToneBurst = (startTime: number, duration: number) => {
+          const osc1 = ctx.createOscillator();
+          const osc2 = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc1.type = 'sine';
+          osc2.type = 'sine';
+          osc1.frequency.setValueAtTime(440, startTime);
+          osc2.frequency.setValueAtTime(480, startTime);
+          gain.gain.setValueAtTime(0.001, startTime);
+          gain.gain.linearRampToValueAtTime(0.35, startTime + 0.02);
+          gain.gain.setValueAtTime(0.35, startTime + duration - 0.03);
+          gain.gain.linearRampToValueAtTime(0.001, startTime + duration);
+          osc1.connect(gain);
+          osc2.connect(gain);
+          gain.connect(ctx.destination);
+          osc1.onended = () => {
+            try { osc1.disconnect(); osc2.disconnect(); gain.disconnect(); } catch {}
+          };
+          osc1.start(startTime);
+          osc2.start(startTime);
+          osc1.stop(startTime + duration);
+          osc2.stop(startTime + duration);
         };
-        osc1.start(now);
-        osc2.start(now);
-        osc1.stop(now + 0.9);
-        osc2.stop(now + 0.9);
+
+        // Ring Burst 1
+        playToneBurst(now, 0.4);
+        // Ring Burst 2
+        playToneBurst(now + 0.55, 0.4);
       }
     } catch {
       // AudioContext might be blocked before first user gesture
