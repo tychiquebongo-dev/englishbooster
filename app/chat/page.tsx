@@ -3058,16 +3058,17 @@ function RealConversationContent() {
                       <Sparkles className="w-3 h-3 text-violet-400" />
                       <span>{isFr ? 'Sujets IA :' : 'AI Topics:'}</span>
                     </span>
-                    {AI_TOPIC_STARTERS.map((topic, idx) => (
+                    {AI_TOPIC_STARTERS.map((item, idx) => (
                       <button
                         key={idx}
                         type="button"
                         onClick={() => {
-                          handleSendMessage(undefined, topic);
+                          handleSendMessage(undefined, item.prompt);
                         }}
-                        className="px-2.5 py-1 rounded-full bg-violet-500/15 hover:bg-violet-500/25 border border-violet-500/30 text-violet-200 text-xs font-semibold shrink-0 transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+                        className="px-2.5 py-1 rounded-full bg-violet-500/15 hover:bg-violet-500/25 border border-violet-500/30 text-violet-200 text-xs font-semibold shrink-0 transition-all active:scale-95 cursor-pointer whitespace-nowrap flex items-center gap-1.5"
                       >
-                        {topic}
+                        <span>{item.icon}</span>
+                        <span>{item.topic}</span>
                       </button>
                     ))}
                   </div>
