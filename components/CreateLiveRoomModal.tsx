@@ -115,6 +115,11 @@ export default function CreateLiveRoomModal({
       };
 
       saveCustomLiveRoom(newRoom);
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('eb_live_created_' + newRoom.id, 'true');
+        } catch {}
+      }
 
       if (onRoomCreated) {
         onRoomCreated(newRoom);

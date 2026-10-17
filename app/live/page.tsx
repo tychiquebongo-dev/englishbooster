@@ -82,6 +82,80 @@ interface LiveChatMessage {
 }
 
 // ============================================================================
+// LOCAL USER VIDEO & AUDIO PREVIEW
+// Automatically plays local camera stream with audio level animation
+// ============================================================================
+function LocalVideoView({
+  stream,
+  isVideoOn,
+  isSpeaking,
+  profile,
+  isFr,
+}: {
+  stream: MediaStream | null;
+  isVideoOn: boolean;
+  isSpeaking: boolean;
+  profile: Profile;
+  isFr: boolean;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [stream]);
+
+  const hasVideoTrack = !!(stream && stream.getVideoTracks().length > 0);
+  const showVideo = isVideoOn && hasVideoTrack;
+
+  return (
+    <div className="relative w-full h-full bg-slate-950 flex items-center justify-center overflow-hidden">
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        className={`w-full h-full object-cover scale-x-[-1] transition-opacity duration-300 ${
+          showVideo ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'
+        }`}
+      />
+      {!showVideo && (
+        <div className="w-full h-full flex flex-col items-center justify-center p-3 bg-gradient-to-b from-[#0b1329] to-[#040814]">
+          <div className="relative">
+            {profile.avatar_url ? (
+              <img
+                src={profile.avatar_url}
+                alt={profile.full_name || 'You'}
+                className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover shadow-xl transition-all ${
+                  isSpeaking ? 'ring-4 ring-emerald-400 scale-105' : 'ring-2 ring-white/20'
+                }`}
+              />
+            ) : (
+              <div
+                className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-tr from-emerald-500/20 to-teal-400/10 border-2 border-emerald-400/40 flex items-center justify-center text-xl font-black text-emerald-300 shadow-xl transition-all ${
+                  isSpeaking ? 'ring-4 ring-emerald-400 scale-105' : 'ring-2 ring-white/20'
+                }`}
+              >
+                {profile.full_name ? profile.full_name.charAt(0).toUpperCase() : 'M'}
+              </div>
+            )}
+            {isSpeaking && (
+              <div className="absolute -bottom-2 inset-x-0 flex items-center justify-center gap-0.5">
+                <span className="w-1.5 h-3 bg-emerald-400 rounded-full animate-bounce [animation-delay:0ms]" />
+                <span className="w-1.5 h-4 bg-emerald-400 rounded-full animate-bounce [animation-delay:150ms]" />
+                <span className="w-1.5 h-3 bg-emerald-400 rounded-full animate-bounce [animation-delay:300ms]" />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // REMOTE PARTICIPANT VIDEO & AUDIO VIEW
 // Plays unmuted audio and renders video track or animated speaking avatar
 // ============================================================================
@@ -97,17 +171,19 @@ function RemoteVideoView({
   isSpeaking: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [hasLiveVideoTrack, setHasLiveVideoTrack] = useState(false);
 
   useEffect(() => {
-    if (!videoRef.current) return;
-
     if (stream) {
-      videoRef.current.srcObject = stream;
-      // Auto-play the remote video and audio (unmuted!)
-      videoRef.current.play().catch(() => {
-        // Will unlock on first user gesture
-      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(() => {});
+      }
+      if (audioRef.current) {
+        audioRef.current.srcObject = stream;
+        audioRef.current.play().catch(() => {});
+      }
 
       const checkTracks = () => {
         const videoTracks = stream.getVideoTracks();
@@ -116,15 +192,17 @@ function RemoteVideoView({
       };
 
       checkTracks();
-      const interval = setInterval(checkTracks, 1000);
+      const interval = setInterval(checkTracks, 800);
       return () => clearInterval(interval);
     } else {
-      videoRef.current.srcObject = null;
+      if (videoRef.current) videoRef.current.srcObject = null;
+      if (audioRef.current) audioRef.current.srcObject = null;
       setHasLiveVideoTrack(false);
     }
   }, [stream]);
 
-  const showVideo = isVideoOn && hasLiveVideoTrack;
+  const hasVideoTrack = !!(stream && stream.getVideoTracks().length > 0);
+  const showVideo = (isVideoOn !== false) && hasVideoTrack;
 
   return (
     <div className="relative w-full h-full bg-slate-950 flex items-center justify-center overflow-hidden">
@@ -137,6 +215,9 @@ function RemoteVideoView({
           showVideo ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'
         }`}
       />
+
+      {/* Auxiliary audio element to guarantee loud and clear audio playback */}
+      <audio ref={audioRef} autoPlay playsInline />
 
       {/* Fallback avatar tile if camera is disabled or connecting */}
       {!showVideo && (
@@ -176,6 +257,25 @@ function RemoteVideoView({
 }
 
 // ============================================================================
+// HELPER: BUILD EMPTY SEATS LIST
+// ============================================================================
+function buildSeatList(count: number): LiveSeat[] {
+  const list: LiveSeat[] = [];
+  for (let i = 1; i <= count; i++) {
+    list.push({
+      seatNumber: i,
+      user: null,
+      isHost: i === 1,
+      isMuted: false,
+      isVideoOn: true,
+      isSpeaking: false,
+      handRaised: false,
+    });
+  }
+  return list;
+}
+
+// ============================================================================
 // MAIN LIVE ROOMS CONTROLLER (INSIDE SUSPENSE)
 // ============================================================================
 function LiveRoomsContent() {
@@ -204,9 +304,28 @@ function LiveRoomsContent() {
   // Video / Audio / Stage Controls
   const INITIAL_SEATS_COUNT = 12;
   const [seats, setSeats] = useState<LiveSeat[]>([]);
-  const [mySeatNumber, setMySeatNumber] = useState<number | null>(null);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isVideoOn, setIsVideoOn] = useState(true);
+  const [mySeatNumber, setMySeatNumberState] = useState<number | null>(null);
+  const mySeatNumberRef = useRef<number | null>(null);
+
+  const setMySeatNumber = (seat: number | null) => {
+    mySeatNumberRef.current = seat;
+    setMySeatNumberState(seat);
+  };
+
+  const [isMuted, setIsMutedState] = useState(false);
+  const isMutedRef = useRef(false);
+  const setIsMuted = (muted: boolean) => {
+    isMutedRef.current = muted;
+    setIsMutedState(muted);
+  };
+
+  const [isVideoOn, setIsVideoOnState] = useState(true);
+  const isVideoOnRef = useRef(true);
+  const setIsVideoOn = (video: boolean) => {
+    isVideoOnRef.current = video;
+    setIsVideoOnState(video);
+  };
+
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [handRaised, setHandRaised] = useState(false);
   const [spectatorCount, setSpectatorCount] = useState(1);
@@ -220,6 +339,7 @@ function LiveRoomsContent() {
   const [roomDurationSec, setRoomDurationSec] = useState(0);
 
   // WebRTC Multi-Peer Audio & Video Mesh State
+  const [localMediaStream, setLocalMediaStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [audioUnlocked, setAudioUnlocked] = useState(false);
 
@@ -232,7 +352,6 @@ function LiveRoomsContent() {
   const [currentAiPromptIndex, setCurrentAiPromptIndex] = useState(0);
 
   // Refs
-  const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const screenVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -292,6 +411,11 @@ function LiveRoomsContent() {
     } as Profile;
   }, [user, profile]);
 
+  const effectiveProfileRef = useRef<Profile>(effectiveProfile);
+  useEffect(() => {
+    effectiveProfileRef.current = effectiveProfile;
+  }, [effectiveProfile]);
+
   // 1. Load Rooms Directory & Listen for Sync Broadcasts
   useEffect(() => {
     const loadRooms = () => {
@@ -320,17 +444,24 @@ function LiveRoomsContent() {
       return;
     }
 
-    const found = findLiveRoomById(activeRoomIdParam) || {
+    const stored = findLiveRoomById(activeRoomIdParam);
+    const isCreatedByMe = typeof window !== 'undefined' && 
+      (localStorage.getItem('eb_live_created_' + activeRoomIdParam) === 'true' || 
+       (stored ? (stored.hostId === user?.id || stored.hostId === effectiveProfile.id) : false));
+
+    const found: LiveRoom = stored || {
       id: activeRoomIdParam,
       title: `${activeRoomIdParam} • Live Video Room`,
       topic: 'Live English debate and real-time speaking practice between global partners.',
       category: 'conversation',
       level: 'All Levels',
-      hostId: user?.id || 'host-live',
-      hostName: profile?.full_name || (user?.email ? user.email.split('@')[0] : 'Partner Host'),
-      hostAvatar: profile?.avatar_url || '',
-      hostFlag: profile?.flag || '🌐',
-      hostLevel: profile?.current_level || 'B2',
+      hostId: isCreatedByMe ? (user?.id || effectiveProfile.id) : 'host_room_creator',
+      hostName: isCreatedByMe 
+        ? (profile?.full_name || (user?.email ? user.email.split('@')[0] : 'Partner Host')) 
+        : 'Host Partner',
+      hostAvatar: isCreatedByMe ? (profile?.avatar_url || '') : '',
+      hostFlag: isCreatedByMe ? (profile?.flag || '🌐') : '🌐',
+      hostLevel: isCreatedByMe ? (profile?.current_level || 'B2') : 'B2',
       maxSeats: 'unlimited',
       isPublic: true,
       createdAt: new Date().toISOString(),
@@ -353,7 +484,7 @@ function LiveRoomsContent() {
     return () => {
       if (durationTimerRef.current) clearInterval(durationTimerRef.current);
     };
-  }, [activeRoomIdParam, user?.id, user?.email, profile?.full_name, profile?.avatar_url, profile?.flag, profile?.current_level]);
+  }, [activeRoomIdParam, user?.id, user?.email, profile?.full_name, profile?.avatar_url, profile?.flag, profile?.current_level, effectiveProfile.id]);
 
   // Helper: Drain buffered ICE candidates once remote description is set
   const drainPendingCandidates = async (peerId: string, pc: RTCPeerConnection) => {
@@ -403,11 +534,16 @@ function LiveRoomsContent() {
     const pc = new RTCPeerConnection(RTC_CONFIG);
     peersRef.current.set(targetPeerId, pc);
 
-    // Attach local audio/video tracks
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => {
+    // Make sure local audio and video tracks are attached
+    let streamToAttach = localStreamRef.current;
+    if (!streamToAttach || !streamToAttach.active) {
+      streamToAttach = await acquireLocalMediaStream();
+    }
+
+    if (streamToAttach) {
+      streamToAttach.getTracks().forEach(track => {
         try {
-          pc.addTrack(track, localStreamRef.current!);
+          pc.addTrack(track, streamToAttach!);
         } catch (e) {
           console.warn('Failed to add local track to peer connection:', e);
         }
@@ -417,6 +553,9 @@ function LiveRoomsContent() {
     // When remote media stream arrives from this peer
     pc.ontrack = (event) => {
       const stream = event.streams[0] || new MediaStream([event.track]);
+      if (!stream.getTracks().includes(event.track)) {
+        stream.addTrack(event.track);
+      }
       remoteStreamsRef.current.set(targetPeerId, stream);
       setRemoteStreams(prev => ({
         ...prev,
@@ -431,7 +570,7 @@ function LiveRoomsContent() {
           type: 'broadcast',
           event: 'live_webrtc_signal',
           payload: {
-            from: effectiveProfile.id,
+            from: effectiveProfileRef.current.id,
             to: targetPeerId,
             type: 'candidate',
             candidate: event.candidate.toJSON(),
@@ -459,7 +598,7 @@ function LiveRoomsContent() {
             type: 'broadcast',
             event: 'live_webrtc_signal',
             payload: {
-              from: effectiveProfile.id,
+              from: effectiveProfileRef.current.id,
               to: targetPeerId,
               type: 'offer',
               offer,
@@ -476,21 +615,25 @@ function LiveRoomsContent() {
 
   // Helper: Process incoming WebRTC signaling messages from Supabase channel
   const handleLiveWebRTCSignal = async (payload: any) => {
-    if (!payload || !payload.from || payload.from === effectiveProfile.id) return;
+    if (!payload || !payload.from || payload.from === effectiveProfileRef.current.id) return;
 
     const senderId = payload.from;
 
     switch (payload.type) {
       case 'new_peer_joined': {
-        // When a new peer joins stage, existing seated peers initiate the call
-        if (mySeatNumber !== null) {
-          await createPeerConnection(senderId, true);
+        // When a new peer joins stage, initiate call if we have higher ID (deterministic caller)
+        if (mySeatNumberRef.current !== null) {
+          if (effectiveProfileRef.current.id > senderId) {
+            await createPeerConnection(senderId, true);
+          } else {
+            await createPeerConnection(senderId, false);
+          }
         }
         break;
       }
 
       case 'offer': {
-        if (payload.to && payload.to !== effectiveProfile.id) return;
+        if (payload.to && payload.to !== effectiveProfileRef.current.id) return;
 
         const pc = await createPeerConnection(senderId, false);
         try {
@@ -505,7 +648,7 @@ function LiveRoomsContent() {
               type: 'broadcast',
               event: 'live_webrtc_signal',
               payload: {
-                from: effectiveProfile.id,
+                from: effectiveProfileRef.current.id,
                 to: senderId,
                 type: 'answer',
                 answer,
@@ -519,7 +662,7 @@ function LiveRoomsContent() {
       }
 
       case 'answer': {
-        if (payload.to && payload.to !== effectiveProfile.id) return;
+        if (payload.to && payload.to !== effectiveProfileRef.current.id) return;
 
         const pc = peersRef.current.get(senderId);
         if (pc) {
@@ -534,7 +677,7 @@ function LiveRoomsContent() {
       }
 
       case 'candidate': {
-        if (payload.to && payload.to !== effectiveProfile.id) return;
+        if (payload.to && payload.to !== effectiveProfileRef.current.id) return;
 
         const pc = peersRef.current.get(senderId);
         if (pc && pc.remoteDescription && pc.remoteDescription.type) {
@@ -561,17 +704,24 @@ function LiveRoomsContent() {
   // Helper: Acquire Camera + Microphone with speaking detection
   const acquireLocalMediaStream = async (): Promise<MediaStream | null> => {
     if (localStreamRef.current && localStreamRef.current.active) {
-      return localStreamRef.current;
+      const hasLiveVideo = localStreamRef.current.getVideoTracks().some(t => t.readyState === 'live');
+      const hasLiveAudio = localStreamRef.current.getAudioTracks().some(t => t.readyState === 'live');
+      if (hasLiveVideo && hasLiveAudio) {
+        setLocalMediaStream(localStreamRef.current);
+        return localStreamRef.current;
+      }
     }
 
     try {
       const stream = await getLocalUserMedia(true);
       if (!stream) return null;
 
+      // Force enable all audio and video tracks
+      stream.getAudioTracks().forEach(t => { t.enabled = true; });
+      stream.getVideoTracks().forEach(t => { t.enabled = true; });
+
       localStreamRef.current = stream;
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
+      setLocalMediaStream(stream);
 
       // Add tracks to any existing peer connections
       peersRef.current.forEach(pc => {
@@ -580,6 +730,11 @@ function LiveRoomsContent() {
           const alreadyAdded = senders.some(s => s.track?.id === track.id || s.track?.kind === track.kind);
           if (!alreadyAdded) {
             try { pc.addTrack(track, stream); } catch {}
+          } else {
+            const sender = senders.find(s => s.track?.kind === track.kind);
+            if (sender) {
+              sender.replaceTrack(track).catch(() => {});
+            }
           }
         });
       });
@@ -608,10 +763,10 @@ function LiveRoomsContent() {
             let sum = 0;
             for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
             const avg = sum / dataArray.length;
-            const isSpeakingNow = avg > 14 && !isMuted;
-            if (mySeatNumber) {
+            const isSpeakingNow = avg > 14 && !isMutedRef.current;
+            if (mySeatNumberRef.current) {
               setSeats(prev => {
-                const idx = mySeatNumber - 1;
+                const idx = mySeatNumberRef.current! - 1;
                 if (idx >= 0 && idx < prev.length && prev[idx].isSpeaking !== isSpeakingNow) {
                   const next = [...prev];
                   next[idx] = { ...next[idx], isSpeaking: isSpeakingNow };
@@ -639,22 +794,6 @@ function LiveRoomsContent() {
   // 3. Supabase Realtime Channel & Presence for the Active Room
   useEffect(() => {
     if (!activeRoom) return;
-
-    const buildSeatList = (count: number): LiveSeat[] => {
-      const list: LiveSeat[] = [];
-      for (let i = 1; i <= count; i++) {
-        list.push({
-          seatNumber: i,
-          user: null,
-          isHost: i === 1,
-          isMuted: false,
-          isVideoOn: true,
-          isSpeaking: false,
-          handRaised: false,
-        });
-      }
-      return list;
-    };
 
     const initialSeats: LiveSeat[] = buildSeatList(INITIAL_SEATS_COUNT);
     setSeats(initialSeats);
@@ -684,7 +823,7 @@ function LiveRoomsContent() {
 
         setSeats(prev => {
           const maxPresSeat = seatedPresences.reduce((acc, p) => Math.max(acc, p.seatNumber || 1), 1);
-          const totalCountNeeded = Math.max(INITIAL_SEATS_COUNT, prev.length, maxPresSeat);
+          const totalCountNeeded = Math.max(INITIAL_SEATS_COUNT, prev.length, maxPresSeat, mySeatNumberRef.current || 1);
           const updated = buildSeatList(totalCountNeeded);
 
           for (const s of seatedPresences) {
@@ -701,6 +840,23 @@ function LiveRoomsContent() {
               };
             }
           }
+
+          // If our seat is not yet present in presence sync, preserve local seat
+          if (mySeatNumberRef.current !== null) {
+            const myIdx = mySeatNumberRef.current - 1;
+            if (myIdx >= 0 && myIdx < updated.length && !updated[myIdx].user) {
+              updated[myIdx] = {
+                seatNumber: mySeatNumberRef.current,
+                user: effectiveProfileRef.current,
+                isHost: mySeatNumberRef.current === 1,
+                isMuted: isMutedRef.current,
+                isVideoOn: isVideoOnRef.current,
+                isSpeaking: false,
+                handRaised: false,
+              };
+            }
+          }
+
           return updated;
         });
 
@@ -713,11 +869,13 @@ function LiveRoomsContent() {
         });
 
         // Auto-connect to any seated peer if missing a peer connection
-        if (mySeatNumber !== null) {
+        if (mySeatNumberRef.current !== null) {
           seatedPresences.forEach(s => {
-            if (s.user && s.user.id !== effectiveProfile.id && !peersRef.current.has(s.user.id)) {
-              if (effectiveProfile.id > s.user.id) {
+            if (s.user && s.user.id !== effectiveProfileRef.current.id && !peersRef.current.has(s.user.id)) {
+              if (effectiveProfileRef.current.id > s.user.id) {
                 createPeerConnection(s.user.id, true);
+              } else {
+                createPeerConnection(s.user.id, false);
               }
             }
           });
@@ -738,10 +896,8 @@ function LiveRoomsContent() {
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          await channel.track({
-            isSpectator: true,
-            user_id: effectiveProfile.id,
-          });
+          // Immediately activate camera and sound and join stage
+          await autoJoinStage(channel);
         }
       });
 
@@ -772,9 +928,10 @@ function LiveRoomsContent() {
   // 4. Audio Autoplay Policy Unlock Listener (User Interaction)
   useEffect(() => {
     const unlockAudio = () => {
-      document.querySelectorAll('video').forEach(v => {
-        if (!v.muted && v.paused) {
-          v.play().catch(() => {});
+      document.querySelectorAll('video, audio').forEach(el => {
+        const media = el as HTMLMediaElement;
+        if (!media.muted && media.paused) {
+          media.play().catch(() => {});
         }
       });
       setAudioUnlocked(true);
@@ -791,24 +948,128 @@ function LiveRoomsContent() {
     };
   }, []);
 
-  // 5. Auto-join Stage with Camera and Audio when entering active live room
-  useEffect(() => {
+  // 5. Auto-join Stage with Camera and Audio (Handles Creator vs Joiner Seat Assignment)
+  const autoJoinStage = async (channelToUse?: any, requestedSeatNumber?: number) => {
+    const ch = channelToUse || channelRef.current;
     if (!activeRoom) return;
 
-    let cancelled = false;
+    // 1. Force acquire camera & microphone
+    const stream = await acquireLocalMediaStream();
+    if (stream) {
+      stream.getAudioTracks().forEach(t => { t.enabled = true; });
+      stream.getVideoTracks().forEach(t => { t.enabled = true; });
+    }
+    setIsVideoOn(true);
+    setIsMuted(false);
 
-    const timer = setTimeout(async () => {
-      if (cancelled) return;
-      const isHost = activeRoom.hostId === effectiveProfile.id || activeRoom.hostName === effectiveProfile.full_name;
-      const targetSeat = isHost ? 1 : undefined;
-      await handleJoinSeat(targetSeat);
-    }, 400);
+    // 2. Determine if Creator or Joiner
+    const isCreator = typeof window !== 'undefined' && 
+      (localStorage.getItem('eb_live_created_' + activeRoom.id) === 'true' || 
+       activeRoom.hostId === effectiveProfileRef.current.id || 
+       activeRoom.hostId === user?.id);
 
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [activeRoom?.id, effectiveProfile.id]);
+    let assignedSeat: number;
+
+    if (requestedSeatNumber !== undefined && requestedSeatNumber > 0) {
+      assignedSeat = requestedSeatNumber;
+    } else if (isCreator) {
+      assignedSeat = 1;
+    } else {
+      // Find occupied seats from presence
+      const occupiedSeats = new Set<number>();
+      if (ch) {
+        try {
+          const presState = ch.presenceState();
+          for (const k in presState) {
+            for (const p of (presState[k] as any[])) {
+              if (p.seatNumber) occupiedSeats.add(p.seatNumber);
+            }
+          }
+        } catch {}
+      }
+      seats.forEach(s => {
+        if (s.user && s.seatNumber) occupiedSeats.add(s.seatNumber);
+      });
+
+      // Joiners take first available seat starting at Seat 2 (reserving Seat 1 for host)
+      let candidate = 2;
+      while (occupiedSeats.has(candidate)) {
+        candidate++;
+      }
+      assignedSeat = candidate;
+    }
+
+    setMySeatNumber(assignedSeat);
+
+    // 3. Update local seats UI state immediately
+    setSeats(prev => {
+      const neededLength = Math.max(prev.length, INITIAL_SEATS_COUNT, assignedSeat);
+      const updated = buildSeatList(neededLength);
+      prev.forEach((s, i) => {
+        if (i < updated.length && s.user) updated[i] = { ...s };
+      });
+      const idx = assignedSeat - 1;
+      if (idx >= 0 && idx < updated.length) {
+        updated[idx] = {
+          seatNumber: assignedSeat,
+          user: effectiveProfileRef.current,
+          isHost: assignedSeat === 1,
+          isMuted: false,
+          isVideoOn: true,
+          isSpeaking: false,
+          handRaised: false,
+        };
+      }
+      return updated;
+    });
+
+    // 4. Track in Supabase Realtime Channel
+    if (ch) {
+      try {
+        await ch.track({
+          seatNumber: assignedSeat,
+          user: effectiveProfileRef.current,
+          isHost: assignedSeat === 1,
+          isMuted: false,
+          isVideoOn: true,
+          isSpeaking: false,
+          handRaised: false,
+        });
+
+        // 5. Broadcast new peer joined
+        await ch.send({
+          type: 'broadcast',
+          event: 'live_webrtc_signal',
+          payload: {
+            from: effectiveProfileRef.current.id,
+            type: 'new_peer_joined',
+            seatNumber: assignedSeat,
+            user: effectiveProfileRef.current,
+          }
+        });
+      } catch (e) {
+        console.warn('Error tracking presence or broadcasting join:', e);
+      }
+    }
+
+    // Connect to any already seated peers
+    seats.forEach(s => {
+      if (s.user && s.user.id !== effectiveProfileRef.current.id && !peersRef.current.has(s.user.id)) {
+        if (effectiveProfileRef.current.id > s.user.id) {
+          createPeerConnection(s.user.id, true);
+        } else {
+          createPeerConnection(s.user.id, false);
+        }
+      }
+    });
+
+    playSound('call');
+  };
+
+  // Join Seat on Stage (Manual click on empty seat)
+  const handleJoinSeat = async (targetSeatNumber?: number) => {
+    await autoJoinStage(channelRef.current, targetSeatNumber);
+  };
 
   // 6. Handle Screen Sharing
   const toggleScreenShare = async () => {
@@ -874,97 +1135,10 @@ function LiveRoomsContent() {
     }
   };
 
-  // Join Seat on Stage (Camera & Audio Auto-Activation)
-  const handleJoinSeat = async (targetSeatNumber?: number) => {
-    playSound('call');
-
-    // 1. Acquire camera and microphone
-    const stream = await acquireLocalMediaStream();
-    if (stream) {
-      stream.getAudioTracks().forEach(t => { t.enabled = true; });
-      stream.getVideoTracks().forEach(t => { t.enabled = true; });
-    }
-
-    setIsVideoOn(true);
-    setIsMuted(false);
-
-    // 2. Calculate seat number
-    let emptyIndex = targetSeatNumber 
-      ? targetSeatNumber - 1 
-      : seats.findIndex(s => s.user === null);
-
-    if (emptyIndex === -1) {
-      emptyIndex = seats.length;
-    }
-
-    const newSeatNum = emptyIndex + 1;
-    const isHost = newSeatNum === 1 || activeRoom?.hostId === effectiveProfile.id;
-
-    setSeats(prev => {
-      const updated = [...prev];
-      while (updated.length <= emptyIndex) {
-        updated.push({
-          seatNumber: updated.length + 1,
-          user: null,
-          isHost: false,
-          isMuted: false,
-          isVideoOn: true,
-          isSpeaking: false,
-          handRaised: false,
-        });
-      }
-      updated[emptyIndex] = {
-        seatNumber: newSeatNum,
-        user: effectiveProfile,
-        isHost,
-        isMuted: false,
-        isVideoOn: true,
-        isSpeaking: false,
-        handRaised: false,
-      };
-      return updated;
-    });
-
-    setMySeatNumber(newSeatNum);
-
-    // 3. Track in Supabase Realtime Channel
-    if (channelRef.current) {
-      channelRef.current.track({
-        seatNumber: newSeatNum,
-        user: effectiveProfile,
-        isHost,
-        isMuted: false,
-        isVideoOn: true,
-        isSpeaking: false,
-        handRaised: false,
-      });
-
-      // 4. Broadcast announcement to all peers
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'live_webrtc_signal',
-        payload: {
-          from: effectiveProfile.id,
-          type: 'new_peer_joined',
-          seatNumber: newSeatNum,
-          user: effectiveProfile,
-        }
-      });
-    }
-
-    // 5. Connect to any peers already seated on stage
-    seats.forEach(s => {
-      if (s.user && s.user.id !== effectiveProfile.id && !peersRef.current.has(s.user.id)) {
-        createPeerConnection(s.user.id, true);
-      }
-    });
-
-    playSound('success');
-  };
-
   // Leave Seat (Return to spectator)
   const handleLeaveSeat = () => {
-    if (mySeatNumber === null) return;
+    if (mySeatNumberRef.current === null) return;
+    const leavingSeatNum = mySeatNumberRef.current;
     playSound('click');
 
     // Broadcast leave
@@ -973,14 +1147,14 @@ function LiveRoomsContent() {
         type: 'broadcast',
         event: 'live_webrtc_signal',
         payload: {
-          from: effectiveProfile.id,
+          from: effectiveProfileRef.current.id,
           type: 'peer_left',
         }
       });
 
       channelRef.current.track({
         isSpectator: true,
-        user_id: effectiveProfile.id,
+        user_id: effectiveProfileRef.current.id,
       });
     }
 
@@ -1002,16 +1176,14 @@ function LiveRoomsContent() {
       stopLocalMediaStream(localStreamRef.current);
       localStreamRef.current = null;
     }
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = null;
-    }
+    setLocalMediaStream(null);
 
     setSeats(prev => {
       const updated = [...prev];
-      const index = mySeatNumber - 1;
+      const index = leavingSeatNum - 1;
       if (updated[index]) {
         updated[index] = {
-          seatNumber: mySeatNumber,
+          seatNumber: leavingSeatNum,
           user: null,
           isHost: false,
           isMuted: true,
@@ -1038,10 +1210,10 @@ function LiveRoomsContent() {
       });
     }
 
-    if (mySeatNumber) {
+    if (mySeatNumberRef.current) {
       setSeats(prev => {
         const updated = [...prev];
-        const idx = mySeatNumber - 1;
+        const idx = mySeatNumberRef.current! - 1;
         if (updated[idx]) {
           updated[idx].isMuted = newMuted;
           if (newMuted) updated[idx].isSpeaking = false;
@@ -1051,11 +1223,11 @@ function LiveRoomsContent() {
 
       if (channelRef.current) {
         channelRef.current.track({
-          seatNumber: mySeatNumber,
-          user: effectiveProfile,
-          isHost: mySeatNumber === 1 || activeRoom?.hostId === effectiveProfile.id,
+          seatNumber: mySeatNumberRef.current,
+          user: effectiveProfileRef.current,
+          isHost: mySeatNumberRef.current === 1 || activeRoom?.hostId === effectiveProfileRef.current.id,
           isMuted: newMuted,
-          isVideoOn,
+          isVideoOn: isVideoOnRef.current,
           isSpeaking: !newMuted,
           handRaised,
         });
@@ -1075,10 +1247,10 @@ function LiveRoomsContent() {
       });
     }
 
-    if (mySeatNumber) {
+    if (mySeatNumberRef.current) {
       setSeats(prev => {
         const updated = [...prev];
-        const idx = mySeatNumber - 1;
+        const idx = mySeatNumberRef.current! - 1;
         if (updated[idx]) {
           updated[idx].isVideoOn = newVideo;
         }
@@ -1087,12 +1259,12 @@ function LiveRoomsContent() {
 
       if (channelRef.current) {
         channelRef.current.track({
-          seatNumber: mySeatNumber,
-          user: effectiveProfile,
-          isHost: mySeatNumber === 1 || activeRoom?.hostId === effectiveProfile.id,
-          isMuted,
+          seatNumber: mySeatNumberRef.current,
+          user: effectiveProfileRef.current,
+          isHost: mySeatNumberRef.current === 1 || activeRoom?.hostId === effectiveProfileRef.current.id,
+          isMuted: isMutedRef.current,
           isVideoOn: newVideo,
-          isSpeaking: !isMuted,
+          isSpeaking: !isMutedRef.current,
           handRaised,
         });
       }
@@ -1515,48 +1687,13 @@ function LiveRoomsContent() {
                       <>
                         {/* Video Element or Avatar Tile */}
                         {isMe ? (
-                          <div className="relative w-full h-full bg-slate-950 flex items-center justify-center overflow-hidden">
-                            <video
-                              ref={localVideoRef}
-                              autoPlay
-                              playsInline
-                              muted
-                              className={`w-full h-full object-cover scale-x-[-1] transition-opacity duration-300 ${
-                                isVideoOn ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'
-                              }`}
-                            />
-                            {!isVideoOn && (
-                              <div className="w-full h-full flex flex-col items-center justify-center p-3 bg-gradient-to-b from-[#0b1329] to-[#040814]">
-                                <div className="relative">
-                                  {effectiveProfile.avatar_url ? (
-                                    <img
-                                      src={effectiveProfile.avatar_url}
-                                      alt={effectiveProfile.full_name || 'You'}
-                                      className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover shadow-xl transition-all ${
-                                        seat.isSpeaking ? 'ring-4 ring-emerald-400 scale-105' : 'ring-2 ring-white/20'
-                                      }`}
-                                    />
-                                  ) : (
-                                    <div
-                                      className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-tr from-emerald-500/20 to-teal-400/10 border-2 border-emerald-400/40 flex items-center justify-center text-xl font-black text-emerald-300 shadow-xl transition-all ${
-                                        seat.isSpeaking ? 'ring-4 ring-emerald-400 scale-105' : 'ring-2 ring-white/20'
-                                      }`}
-                                    >
-                                      {effectiveProfile.full_name ? effectiveProfile.full_name.charAt(0).toUpperCase() : 'M'}
-                                    </div>
-                                  )}
-
-                                  {seat.isSpeaking && (
-                                    <div className="absolute -bottom-2 inset-x-0 flex items-center justify-center gap-0.5">
-                                      <span className="w-1.5 h-3 bg-emerald-400 rounded-full animate-bounce [animation-delay:0ms]" />
-                                      <span className="w-1.5 h-4 bg-emerald-400 rounded-full animate-bounce [animation-delay:150ms]" />
-                                      <span className="w-1.5 h-3 bg-emerald-400 rounded-full animate-bounce [animation-delay:300ms]" />
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </div>
+                          <LocalVideoView
+                            stream={localMediaStream || localStreamRef.current}
+                            isVideoOn={isVideoOn}
+                            isSpeaking={seat.isSpeaking}
+                            profile={effectiveProfile}
+                            isFr={isFr}
+                          />
                         ) : (
                           <RemoteVideoView
                             stream={remoteStreams[seat.user?.id || '']}
