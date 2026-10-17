@@ -30,7 +30,8 @@ import {
   VolumeX,
   Video,
   Download,
-  ArrowRight
+  ArrowRight,
+  Radio
 } from 'lucide-react';
 import InvitePartnerModal from '@/components/InvitePartnerModal';
 
@@ -358,6 +359,15 @@ export default function PartnersPage() {
           >
             <Download className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
             <span>{isFr ? "📲 Télécharger l'App (Mobile & PC)" : "📲 Download App (Mobile & PC)"}</span>
+          </Link>
+
+          <Link
+            href="/live"
+            onClick={() => playSound('call')}
+            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 via-amber-500 to-emerald-400 text-slate-950 font-black text-xs flex items-center gap-2 transition-all hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(244,63,94,0.35)]"
+          >
+            <Radio className="w-4 h-4 animate-pulse" />
+            <span>{isFr ? "🔴 Salons Vidéo en Direct" : "🔴 Live Video Rooms"}</span>
           </Link>
 
           <Link

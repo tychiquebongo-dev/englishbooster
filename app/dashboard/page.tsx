@@ -372,8 +372,8 @@ export default function DashboardPage() {
                 onClick={() => playSound('chime')}
                 className="w-full sm:w-auto px-6 py-3 rounded-xl font-bold text-slate-950 bg-gradient-to-r from-emerald-500 to-teal-400 dark:from-emerald-400 dark:to-teal-300 hover:from-emerald-400 transition-all flex items-center justify-center gap-2 text-sm shadow-md"
               >
-                <Radio className="w-4 h-4" />
-                <span>{isFr ? 'Entrer dans un salon vocal direct' : 'Join a live voice room'}</span>
+                <Radio className="w-4 h-4 animate-pulse" />
+                <span>{isFr ? '🔴 Salons Vidéo en Direct' : '🔴 Live Video Rooms'}</span>
               </Link>
               <Link
                 href="/partners"
