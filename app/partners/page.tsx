@@ -29,7 +29,6 @@ import {
   Volume2,
   VolumeX,
   Video,
-  Download,
   ArrowRight,
   Radio
 } from 'lucide-react';
@@ -353,15 +352,6 @@ export default function PartnersPage() {
           </button>
 
           <Link
-            href="/download"
-            onClick={() => playSound('click')}
-            className="px-5 py-2.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-700 dark:text-cyan-300 font-bold text-xs flex items-center gap-2 transition-all hover:scale-105 active:scale-95 shadow-sm"
-          >
-            <Download className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-            <span>{isFr ? "📲 Télécharger l'App (Mobile & PC)" : "📲 Download App (Mobile & PC)"}</span>
-          </Link>
-
-          <Link
             href="/live"
             onClick={() => playSound('call')}
             className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 via-amber-500 to-emerald-400 text-slate-950 font-black text-xs flex items-center gap-2 transition-all hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(244,63,94,0.35)]"
@@ -377,31 +367,6 @@ export default function PartnersPage() {
           >
             <Tv className="w-4 h-4" />
             <span>{isFr ? "Publier un Short Vidéo" : "Publish a Short Video"}</span>
-          </Link>
-        </div>
-
-        {/* Banner: Install Mobile & PC App for Instant Call Alerts */}
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-cyan-950/40 via-blue-950/30 to-slate-900 border border-cyan-500/25 flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center shrink-0">
-              <Download className="w-4 h-4" />
-            </div>
-            <div className="text-xs">
-              <p className="font-bold text-white">
-                {isFr ? "Installez l'Application sur Mobile et PC" : "Install the App on Mobile and PC"}
-              </p>
-              <p className="text-slate-400 text-[11px]">
-                {isFr ? "Recevez vos appels en direct avec sonnerie et vibreur persistant même hors ligne !" : "Get live partner calls with persistent ringing and vibration even offline!"}
-              </p>
-            </div>
-          </div>
-          <Link
-            href="/download"
-            onClick={() => playSound('click')}
-            className="py-1.5 px-4 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-black text-xs transition-colors shrink-0 flex items-center gap-1.5 shadow-sm"
-          >
-            <span>{isFr ? "Installer l'App" : "Install App"}</span>
-            <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
 

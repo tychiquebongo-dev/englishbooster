@@ -87,11 +87,6 @@ export default function Footer() {
                   {isFr ? "Offres & Tarifs SaaS" : "Pricing & SaaS Plans"}
                 </Link>
               </li>
-              <li>
-                <Link href="/download" className="text-cyan-500 font-bold hover:text-cyan-400 transition-colors flex items-center gap-1.5">
-                  <span>{isFr ? "📲 Télécharger l'App (Mobile & PC)" : "📲 Download App (Mobile & PC)"}</span>
-                </Link>
-              </li>
             </ul>
           </div>
 
