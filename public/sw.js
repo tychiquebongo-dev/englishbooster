@@ -1,7 +1,7 @@
 // English Booster Production Service Worker for Background Call & Message Notifications
 // Handles Web Push events even when the application is closed or phone is locked (Hors-Application / Background)
 
-const EB_CACHE_NAME = 'eb-pwa-v6';
+const EB_CACHE_NAME = 'eb-pwa-v7';
 
 // Install event: Pre-cache PWA core assets for instant launch & background ringtones
 self.addEventListener('install', (event) => {
@@ -73,6 +73,16 @@ self.addEventListener('push', (event) => {
     }
   }
 
+  // If call was ended or declined by caller, close incoming call notification immediately
+  if (data.type === 'call_ended' || data.type === 'call_declined') {
+    event.waitUntil(
+      self.registration.getNotifications({ tag: 'eb-incoming-call' }).then((notifications) => {
+        return Promise.all(notifications.map((notif) => notif.close()));
+      })
+    );
+    return;
+  }
+
   const isCall = data.type === 'call' || data.tag === 'eb-incoming-call' || Boolean(data.roomId);
   const isVideo = data.isVideo === true || (data.title && data.title.includes('Vidéo')) || (data.url && data.url.includes('video=true'));
   const callerName = data.callerName || 'Un partenaire';
@@ -106,9 +116,9 @@ self.addEventListener('push', (event) => {
     requireInteraction: isCall,
     silent: false,
     sound: isCall ? '/assets/sounds/phone-ring.wav' : undefined,
-    // Realistic phone ringer physical vibration cadence lasting ~25s of continuous ringing
+    // Realistic phone ringer physical vibration cadence lasting continuously
     vibrate: isCall 
-      ? [1000, 400, 1000, 400, 1000, 400, 1000, 400, 1000, 400, 1000, 400, 1000, 400, 1000, 400, 1000, 400] 
+      ? [1000, 300, 1000, 300, 1000, 300, 1000, 300] 
       : [250, 150, 250],
     data: {
       url: targetUrl,
@@ -160,11 +170,25 @@ self.addEventListener('notificationclick', (event) => {
   // If user tapped "Decline" button on call notification, dismiss cleanly and notify clients
   if (action === 'decline') {
     event.waitUntil(
-      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientsList) => {
+      (async () => {
+        if (notifData.callerId && notifData.roomId) {
+          try {
+            await fetch('/api/push/send', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                receiverId: notifData.callerId,
+                type: 'call_declined',
+                roomId: notifData.roomId,
+              })
+            });
+          } catch {}
+        }
+        const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
         for (const client of clientsList) {
           client.postMessage({ type: 'eb_call_declined_from_sw', roomId: notifData.roomId });
         }
-      })
+      })()
     );
     return;
   }

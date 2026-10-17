@@ -107,6 +107,7 @@ export async function POST(req: NextRequest) {
     );
 
     const isCall = type === 'call';
+    const isCallDismiss = type === 'call_ended' || type === 'call_declined';
     const isVideoCall = isVideo === true;
 
     const defaultTitle = isCall 
@@ -126,12 +127,12 @@ export async function POST(req: NextRequest) {
       : `/chat?partnerId=${senderId}`);
 
     const payload = JSON.stringify({
-      title: title || defaultTitle,
-      body: notifBody || defaultBody,
+      title: isCallDismiss ? 'Appel terminé' : (title || defaultTitle),
+      body: isCallDismiss ? 'L\'appel a pris fin' : (notifBody || defaultBody),
       icon: icon || callerAvatar || '/assets/images/logo.svg',
       url: targetUrl,
       type: type || 'notification',
-      tag: isCall ? 'eb-incoming-call' : `eb-msg-${senderId || Date.now()}`,
+      tag: (isCall || isCallDismiss) ? 'eb-incoming-call' : `eb-msg-${senderId || Date.now()}`,
       callerId,
       callerName,
       callerAvatar,
@@ -149,8 +150,8 @@ export async function POST(req: NextRequest) {
     const sendPromises = targetSubscriptions.map(async (sub) => {
       try {
         await webpush.sendNotification(sub, payload, {
-          TTL: isCall ? 60 : 3600, // 60s for live calls, 1h for messages
-          urgency: isCall ? 'high' : 'normal',
+          TTL: (isCall || isCallDismiss) ? 60 : 3600, // 60s for live calls/dismissals, 1h for messages
+          urgency: (isCall || isCallDismiss) ? 'high' : 'normal',
         });
         sentCount++;
       } catch (pushErr: any) {

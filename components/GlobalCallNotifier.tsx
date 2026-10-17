@@ -396,6 +396,15 @@ export default function GlobalCallNotifier() {
     if (pathnameRef.current === '/call') return;
     if (!payload || (payload.receiverId && user?.id && payload.receiverId !== user.id)) return;
 
+    // If call modal is already active for this call session, keep vibration and audio going without resetting state
+    if (incomingCallRef.current && incomingCallRef.current.roomId === payload.roomId) {
+      if (ringAudioRef.current && ringAudioRef.current.paused) {
+        ringAudioRef.current.play().catch(() => playSoundRef.current('call'));
+      }
+      triggerVibration([1000, 500, 1000, 500]);
+      return;
+    }
+
     incomingCallRef.current = payload;
     setIncomingCall(payload);
 
@@ -474,6 +483,9 @@ export default function GlobalCallNotifier() {
 
     channel
       .on('broadcast', { event: 'incoming_call' }, ({ payload }: { payload: IncomingCallPayload }) => {
+        handleTriggerIncomingCall(payload);
+      })
+      .on('broadcast', { event: 'incoming_call_pulse' }, ({ payload }: { payload: IncomingCallPayload }) => {
         handleTriggerIncomingCall(payload);
       })
       .on('broadcast', { event: 'call_ended' }, () => {

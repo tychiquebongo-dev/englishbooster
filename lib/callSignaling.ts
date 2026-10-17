@@ -25,6 +25,61 @@ export interface NewMessagePayload {
 }
 
 /**
+ * Repeatedly pulse call signaling to keep offline partner's phone ringing and vibrating
+ * outside the application without adding duplicate database entries
+ */
+export async function broadcastCallPulse(payload: IncomingCallPayload) {
+  if (typeof window === 'undefined') return;
+  const supabase = createClient();
+  const roomChannelName = `call-room-${payload.roomId}`;
+  const channelName = `user-notifications-${payload.receiverId}`;
+
+  // 1. Send push to partner device with tag 'eb-incoming-call' and renotify: true
+  // This re-triggers vibration & ringing continuously outside the app on Android/iOS/PC
+  const pushPromise = fetch('/api/push/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    keepalive: true,
+    body: JSON.stringify({
+      receiverId: payload.receiverId,
+      type: 'call',
+      title: payload.isVideo
+        ? `📹 Appel Vidéo entrant : ${payload.callerName}`
+        : `📞 Appel Vocal entrant : ${payload.callerName}`,
+      body: payload.isVideo
+        ? `${payload.callerName} vous invite en appel vidéo HD. Touchez pour décrocher.`
+        : `${payload.callerName} vous appelle en direct sur English Booster. Touchez pour décrocher.`,
+      icon: payload.callerAvatar || '/assets/images/logo.svg',
+      url: `/call?partnerId=${payload.callerId}&partnerName=${encodeURIComponent(payload.callerName)}&roomId=${payload.roomId}&video=${payload.isVideo}&autoAnswer=true`,
+      callerId: payload.callerId,
+      callerName: payload.callerName,
+      callerAvatar: payload.callerAvatar,
+      roomId: payload.roomId,
+      isVideo: payload.isVideo,
+      isPulse: true,
+    }),
+  }).catch((err) => {
+    console.warn('Call pulse push error:', err);
+  });
+
+  // 2. Broadcast over realtime channels if connected
+  try {
+    const activeChannels = supabase.getChannels();
+    for (const c of activeChannels) {
+      if (c.topic === `realtime:${roomChannelName}` || c.topic === `realtime:${channelName}`) {
+        c.send({
+          type: 'broadcast',
+          event: 'incoming_call_pulse',
+          payload: { ...payload, timestamp: Date.now() },
+        }).catch(() => {});
+      }
+    }
+  } catch {}
+
+  await pushPromise;
+}
+
+/**
  * Broadcast an incoming call to the receiver's personal notification channel
  */
 export async function broadcastIncomingCall(payload: IncomingCallPayload) {
@@ -230,7 +285,22 @@ export async function broadcastCallEnded(roomId: string, partnerId?: string, sen
   if (typeof window === 'undefined') return;
   const supabase = createClient();
 
-  // 1. Broadcast directly to partner's personal notification channel
+  // 1. Immediately send Web Push dismiss signal so receiver's device closes notification outside app
+  if (partnerId) {
+    fetch('/api/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({
+        receiverId: partnerId,
+        type: 'call_ended',
+        roomId,
+        senderId,
+      }),
+    }).catch(() => {});
+  }
+
+  // 2. Broadcast directly to partner's personal notification channel
   if (partnerId) {
     const partnerChannel = supabase.channel(`user-notifications-${partnerId}`);
     partnerChannel.subscribe((status) => {
@@ -251,7 +321,7 @@ export async function broadcastCallEnded(roomId: string, partnerId?: string, sen
     });
   }
 
-  // 2. Broadcast to the room channel
+  // 3. Broadcast to the room channel
   const roomChannel = supabase.channel(`call-room-${roomId}`);
   roomChannel.subscribe((status) => {
     if (status === 'SUBSCRIBED') {
@@ -268,7 +338,7 @@ export async function broadcastCallEnded(roomId: string, partnerId?: string, sen
     }
   });
 
-  // 3. Update call record in database
+  // 4. Update call record in database
   try {
     supabase
       .from('calls')
@@ -284,6 +354,20 @@ export async function broadcastCallEnded(roomId: string, partnerId?: string, sen
 export async function broadcastCallDeclined(callerId: string, roomId: string) {
   if (typeof window === 'undefined') return;
   const supabase = createClient();
+
+  // 1. Send Web Push dismiss signal to caller's device outside app
+  if (callerId) {
+    fetch('/api/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({
+        receiverId: callerId,
+        type: 'call_declined',
+        roomId,
+      }),
+    }).catch(() => {});
+  }
 
   const callerChannel = supabase.channel(`user-notifications-${callerId}`);
   callerChannel.subscribe((status) => {

@@ -45,6 +45,7 @@ import {
 import { getUserAvatar } from '@/lib/avatarHelper';
 import { 
   broadcastIncomingCall, 
+  broadcastCallPulse,
   broadcastCallEnded, 
   broadcastCallDeclined,
   recordMissedCall 
@@ -224,18 +225,40 @@ function CallContent() {
     fetchPartner();
   }, [partnerId, isAiCall, supabase]);
 
-  // 2. Dial tone sound loop for caller while waiting for partner to answer
+  // 2. Dial tone sound loop for caller + persistent ringing & vibration pulses for partner outside app
   useEffect(() => {
     if (callStatus !== 'calling' || isAiCall) return;
 
     // Caller hears dial tone while ringing
     playSoundRef.current('call');
+
+    // Trigger continuous ring and vibration pulses for offline partner's phone
+    const sendPulse = () => {
+      if (isCaller && partnerId && user?.id) {
+        broadcastCallPulse({
+          callerId: user.id,
+          callerName: profileRef.current?.full_name || 'English Learner',
+          callerAvatar: getUserAvatar(profileRef.current?.avatar_url, profileRef.current?.full_name, user?.email),
+          callerFlag: profileRef.current?.flag || '🌐',
+          callerLevel: profileRef.current?.current_level || 'B2',
+          receiverId: partnerId,
+          roomId,
+          isVideo: isVideoParam,
+        });
+      }
+    };
+
+    // Immediate pulse when entering calling state
+    sendPulse();
+
+    // Pulse every 3.5 seconds: guarantees uninterrupted ringing & physical vibration on the callee's phone outside the app
     const ringInterval = setInterval(() => {
       playSoundRef.current('call');
-    }, 2800);
+      sendPulse();
+    }, 3500);
 
     return () => clearInterval(ringInterval);
-  }, [callStatus, isAiCall]);
+  }, [callStatus, isAiCall, isCaller, partnerId, user?.id, user?.email, roomId, isVideoParam]);
 
   // 2b. Auto-timeout after 45s ringing if partner does not answer (e.g. offline partner)
   useEffect(() => {
