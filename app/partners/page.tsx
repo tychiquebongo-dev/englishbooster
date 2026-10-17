@@ -116,7 +116,7 @@ export default function PartnersPage() {
                   ? `${isFr ? 'Objectif' : 'Goal'} ${p.target_level}` 
                   : (isFr ? 'Conversation Réelle' : 'Real Conversation')),
               interests: isFounder ? ['Public Speaking', 'Coaching', 'Leadership', 'Tech'] : (p.interests && p.interests.length > 0 ? p.interests : ['Conversation', 'Travel', 'Tech']),
-              is_online: Boolean(p.is_online),
+              is_online: Boolean(p.is_online && p.updated_at && (Date.now() - new Date(p.updated_at).getTime() < 90000)),
               streak: p.streak ?? 0,
             };
           });

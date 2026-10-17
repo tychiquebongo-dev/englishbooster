@@ -67,6 +67,7 @@ interface RealPartner {
   specialty: string;
   is_online: boolean;
   bio: string;
+  updated_at?: string;
 }
 
 interface ChatReplyTo {
@@ -187,16 +188,24 @@ function RealConversationContent() {
   const supabase = createClient();
   const { isFr } = useTranslation();
 
-  // ONLY 100% real registered partners from database
   const [partners, setPartners] = useState<RealPartner[]>([]);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const [activePartnerId, setActivePartnerId] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now());
   const [loadingPartners, setLoadingPartners] = useState(true);
   const [searchFilter, setSearchFilter] = useState('');
   const [conversationMap, setConversationMap] = useState<Record<string, ChatMessage[]>>({});
   const [inputText, setInputText] = useState('');
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   
+  // Periodic timer to re-evaluate heartbeat freshness every 15s in real time
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Mobile responsive toggle
   const [mobileShowChat, setMobileShowChat] = useState(false);
 
@@ -352,6 +361,8 @@ function RealConversationContent() {
 
           const realList: RealPartner[] = otherProfiles.map((p: Profile) => {
             const isFounder = p.email === 'tychiquebongo@gmail.com' || p.role === 'admin';
+            const isFresh = p.updated_at ? (Date.now() - new Date(p.updated_at).getTime() < 90000) : false;
+            const isOnline = Boolean(onlineUserIds.has(p.id) || (p.is_online && isFresh));
             return {
               id: p.id,
               name: p.full_name || (isFounder ? 'Tychique Bongo' : 'Registered Member'),
@@ -360,7 +371,8 @@ function RealConversationContent() {
               avatar: getUserAvatar(p.avatar_url, p.full_name, p.email),
               level: isFounder ? 'C2' : (p.current_level || 'B1'),
               specialty: isFounder ? '👑 Founder & Fluency Coach' : (p.target_level ? `Target ${p.target_level}` : 'English Conversation'),
-              is_online: Boolean(p.is_online),
+              is_online: isOnline,
+              updated_at: p.updated_at,
               bio: isFounder 
                 ? "Founder of English Booster. Certified fluency mentor."
                 : (p.bio || "Registered member practicing spoken English in real time."),
@@ -431,23 +443,26 @@ function RealConversationContent() {
   const activePartner = useMemo(() => {
     const base = partners.find(p => p.id === activePartnerId) || partners[0] || null;
     if (!base) return null;
+    const isFresh = base.updated_at ? (now - new Date(base.updated_at).getTime() < 90000) : false;
+    const isOnline = Boolean(onlineUserIds.has(base.id) || (base.is_online && isFresh));
     return {
       ...base,
-      is_online: Boolean(base.is_online || onlineUserIds.has(base.id)),
+      is_online: isOnline,
     };
-  }, [partners, activePartnerId, onlineUserIds]);
+  }, [partners, activePartnerId, onlineUserIds, now]);
 
   // Global Realtime Presence & Database status listener across all registered users
   useEffect(() => {
     // 1. Immediately read cached presence if available from GlobalCallNotifier
     if (typeof window !== 'undefined' && Array.isArray((window as any).__EB_ONLINE_USER_IDS)) {
-      setOnlineUserIds(prev => new Set([...prev, ...(window as any).__EB_ONLINE_USER_IDS]));
+      setOnlineUserIds(new Set((window as any).__EB_ONLINE_USER_IDS));
     }
 
     // 2. Listen to presence updates dispatched globally by GlobalCallNotifier
     const handlePresenceSync = (e: any) => {
       if (e?.detail && Array.isArray(e.detail)) {
-        setOnlineUserIds(prev => new Set([...prev, ...e.detail]));
+        // Fresh set of active user IDs; automatically removes users who disconnected/closed tab
+        setOnlineUserIds(new Set(e.detail));
       }
     };
 
@@ -471,7 +486,7 @@ function RealConversationContent() {
           }
         });
         if (ids.size > 0) {
-          setOnlineUserIds(prev => new Set([...prev, ...ids]));
+          setOnlineUserIds(ids);
         }
       }
     } catch {}
@@ -482,10 +497,17 @@ function RealConversationContent() {
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, (payload: any) => {
         if (payload.new && payload.new.id) {
           const updatedId = payload.new.id;
-          const isOnline = Boolean(payload.new.is_online);
-          setPartners(prev => prev.map(p => p.id === updatedId ? { ...p, is_online: isOnline } : p));
+          const isFresh = payload.new.updated_at ? (Date.now() - new Date(payload.new.updated_at).getTime() < 90000) : false;
+          const isOnline = Boolean(payload.new.is_online && isFresh);
+          setPartners(prev => prev.map(p => p.id === updatedId ? { ...p, is_online: isOnline, updated_at: payload.new.updated_at } : p));
           if (isOnline) {
             setOnlineUserIds(prev => new Set(prev).add(updatedId));
+          } else {
+            setOnlineUserIds(prev => {
+              const next = new Set(prev);
+              next.delete(updatedId);
+              return next;
+            });
           }
         }
       })
@@ -646,11 +668,42 @@ function RealConversationContent() {
           Object.values(state).some((list: any) => Array.isArray(list) && list.some((p: any) => p.user_id === activePartner.id));
         if (hasPartner) {
           setOnlineUserIds(prev => new Set(prev).add(activePartner.id));
+        } else {
+          if (typeof window !== 'undefined' && Array.isArray((window as any).__EB_ONLINE_USER_IDS)) {
+            const isGloballyOnline = (window as any).__EB_ONLINE_USER_IDS.includes(activePartner.id);
+            if (!isGloballyOnline) {
+              setOnlineUserIds(prev => {
+                const next = new Set(prev);
+                next.delete(activePartner.id);
+                return next;
+              });
+            }
+          }
         }
       })
       .on('presence', { event: 'join' }, ({ key, newPresences }: any) => {
         if (key === activePartner.id || (Array.isArray(newPresences) && newPresences.some((p: any) => p.user_id === activePartner.id))) {
           setOnlineUserIds(prev => new Set(prev).add(activePartner.id));
+        }
+      })
+      .on('presence', { event: 'leave' }, ({ key, leftPresences }: any) => {
+        if (key === activePartner.id || (Array.isArray(leftPresences) && leftPresences.some((p: any) => p.user_id === activePartner.id))) {
+          if (typeof window !== 'undefined' && Array.isArray((window as any).__EB_ONLINE_USER_IDS)) {
+            const isGloballyOnline = (window as any).__EB_ONLINE_USER_IDS.includes(activePartner.id);
+            if (!isGloballyOnline) {
+              setOnlineUserIds(prev => {
+                const next = new Set(prev);
+                next.delete(activePartner.id);
+                return next;
+              });
+            }
+          } else {
+            setOnlineUserIds(prev => {
+              const next = new Set(prev);
+              next.delete(activePartner.id);
+              return next;
+            });
+          }
         }
       })
       .on('broadcast', { event: 'user_active' }, ({ payload }: any) => {
@@ -2030,7 +2083,8 @@ function RealConversationContent() {
             ) : (
               filteredPartners.map((partner) => {
                 const isSelected = activePartner?.id === partner.id;
-                const isOnline = Boolean(partner.is_online || onlineUserIds.has(partner.id));
+                const isFresh = partner.updated_at ? (now - new Date(partner.updated_at).getTime() < 90000) : false;
+                const isOnline = Boolean(onlineUserIds.has(partner.id) || (partner.is_online && isFresh));
                 const msgs = conversationMap[partner.id] || [];
                 const lastMsg = msgs[msgs.length - 1];
 
