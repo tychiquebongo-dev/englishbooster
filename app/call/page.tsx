@@ -93,6 +93,7 @@ function CallContent() {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const remoteMediaStreamRef = useRef<MediaStream | null>(null);
 
   const streamRef = useRef<MediaStream | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -115,6 +116,10 @@ function CallContent() {
     if (streamRef.current) {
       stopLocalMediaStream(streamRef.current);
       streamRef.current = null;
+    }
+    if (remoteMediaStreamRef.current) {
+      stopLocalMediaStream(remoteMediaStreamRef.current);
+      remoteMediaStreamRef.current = null;
     }
     if (pcRef.current) {
       try {
@@ -228,6 +233,16 @@ function CallContent() {
     };
   }, [callStatus, playSound]);
 
+  // Ensure local video preview is attached when camera is toggled or rendered
+  useEffect(() => {
+    if (videoActive && localVideoRef.current && streamRef.current) {
+      if (localVideoRef.current.srcObject !== streamRef.current) {
+        localVideoRef.current.srcObject = streamRef.current;
+      }
+      localVideoRef.current.play().catch(() => {});
+    }
+  }, [videoActive]);
+
   // 4. Initialize Local Media and WebRTC Peer Connection
   useEffect(() => {
     if (!user?.id || !roomId) return;
@@ -235,9 +250,10 @@ function CallContent() {
     let isMounted = true;
     hasOfferedRef.current = false;
     pendingCandidatesRef.current = [];
+    remoteMediaStreamRef.current = new MediaStream();
 
     const initializeCall = async () => {
-      // A. Acquire local camera & microphone stream
+      // A. Acquire local camera & microphone stream with multi-layer fallbacks
       let localStream: MediaStream | null = null;
       try {
         localStream = await getLocalUserMedia(isVideoParam);
@@ -246,43 +262,62 @@ function CallContent() {
 
         if (localVideoRef.current && localStream && isVideoParam) {
           localVideoRef.current.srcObject = localStream;
+          localVideoRef.current.play().catch(() => {});
         }
       } catch (err) {
         console.warn('Camera/mic access blocked or error:', err);
         setPermissionError(true);
       }
 
-      // B. Create RTCPeerConnection with STUN servers
+      // B. Create RTCPeerConnection with STUN & Metered TURN servers
       const pc = new RTCPeerConnection(RTC_CONFIG);
       pcRef.current = pc;
 
       // Add local stream tracks to PeerConnection
       if (localStream) {
         localStream.getTracks().forEach((track) => {
-          pc.addTrack(track, localStream!);
+          try {
+            pc.addTrack(track, localStream!);
+          } catch (e) {
+            console.warn('Error adding local track to pc:', e);
+          }
         });
       }
 
-      // Listen for remote tracks
+      // Listen for remote audio and video tracks
       pc.ontrack = (event) => {
-        console.log('WebRTC ontrack received remote media:', event.track.kind);
-        const remoteStream = event.streams[0] || new MediaStream([event.track]);
-        
+        console.log('WebRTC ontrack received remote media track:', event.track.kind);
+        if (!remoteMediaStreamRef.current) {
+          remoteMediaStreamRef.current = new MediaStream();
+        }
+
+        if (event.streams && event.streams[0]) {
+          event.streams[0].getTracks().forEach((t) => {
+            if (!remoteMediaStreamRef.current!.getTracks().some((existing) => existing.id === t.id)) {
+              remoteMediaStreamRef.current!.addTrack(t);
+            }
+          });
+        } else {
+          if (!remoteMediaStreamRef.current.getTracks().some((existing) => existing.id === event.track.id)) {
+            remoteMediaStreamRef.current.addTrack(event.track);
+          }
+        }
+
         if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = remoteStream;
+          if (remoteVideoRef.current.srcObject !== remoteMediaStreamRef.current) {
+            remoteVideoRef.current.srcObject = remoteMediaStreamRef.current;
+          }
+          remoteVideoRef.current.play().catch(() => {});
         }
         if (remoteAudioRef.current) {
-          remoteAudioRef.current.srcObject = remoteStream;
+          if (remoteAudioRef.current.srcObject !== remoteMediaStreamRef.current) {
+            remoteAudioRef.current.srcObject = remoteMediaStreamRef.current;
+          }
+          remoteAudioRef.current.play().catch(() => {});
         }
 
         setHasRemoteStream(true);
         setCallStatus('connected');
-
-        // Automatically disconnect if remote track ends
-        event.track.onended = () => {
-          console.log('Remote media track ended by partner');
-          handleRemoteHangup();
-        };
       };
 
       // Listen for local ICE candidates to transmit to partner
@@ -321,14 +356,14 @@ function CallContent() {
               if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
                 handleRemoteHangupRef.current();
               }
-            }, 15000);
+            }, 25000);
           }
         } else if (pc.connectionState === 'closed') {
           handleRemoteHangupRef.current();
         }
       };
 
-      // ICE connection state listener with 20s recovery grace period & transparent ICE restart for UNLIMITED call duration
+      // ICE connection state listener with 25s recovery grace period & transparent ICE restart for UNLIMITED call duration
       pc.oniceconnectionstatechange = () => {
         console.log('RTCPeerConnection ICE state:', pc.iceConnectionState);
         if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
@@ -339,17 +374,17 @@ function CallContent() {
           setHasRemoteStream(true);
           setCallStatus('connected');
         } else if (pc.iceConnectionState === 'disconnected') {
-          console.warn('ICE state temporarily disconnected. Preserving call with 20s grace period for NAT refresh.');
+          console.warn('ICE state temporarily disconnected. Preserving call with 25s grace period for NAT refresh.');
           try {
             if (typeof pc.restartIce === 'function') pc.restartIce();
           } catch {}
           if (!disconnectGraceTimeout) {
             disconnectGraceTimeout = setTimeout(() => {
               if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-                console.log('ICE recovery timed out after 20s. Terminating call.');
+                console.log('ICE recovery timed out after 25s. Terminating call.');
                 handleRemoteHangupRef.current();
               }
-            }, 20000);
+            }, 25000);
           }
         } else if (pc.iceConnectionState === 'failed') {
           try {
@@ -360,7 +395,7 @@ function CallContent() {
               if (pc.iceConnectionState === 'failed') {
                 handleRemoteHangupRef.current();
               }
-            }, 15000);
+            }, 25000);
           }
         } else if (pc.iceConnectionState === 'closed') {
           handleRemoteHangupRef.current();
@@ -375,7 +410,7 @@ function CallContent() {
 
         switch (payload.type) {
           case 'ping':
-            // Keepalive ping to prevent NAT timeout, no action required
+            // Keepalive ping to prevent NAT timeout
             break;
 
           case 'hangup':
@@ -385,37 +420,54 @@ function CallContent() {
             break;
 
           case 'partner_ready':
-            // Partner is in room and ready for handshake.
-            // If we are Caller, initiate the SDP Offer!
-            if (isCaller && !hasOfferedRef.current) {
-              try {
-                hasOfferedRef.current = true;
-                const offer = await currentPC.createOffer({
-                  offerToReceiveAudio: true,
-                  offerToReceiveVideo: isVideoParam,
-                });
-                await currentPC.setLocalDescription(offer);
+            console.log('Partner ready in room. Current signaling state:', currentPC.signalingState);
+            if (isCaller) {
+              if (currentPC.signalingState === 'have-local-offer' && currentPC.localDescription) {
                 channelRef.current?.send({
                   type: 'broadcast',
                   event: 'webrtc_signal',
                   payload: {
                     type: 'offer',
-                    sdp: offer,
+                    sdp: currentPC.localDescription,
                     from: user.id,
                   },
                 });
-              } catch (e) {
-                console.error('Error creating SDP Offer:', e);
-                hasOfferedRef.current = false;
+              } else if (currentPC.signalingState === 'stable' && currentPC.connectionState !== 'connected') {
+                try {
+                  const offer = await currentPC.createOffer({
+                    offerToReceiveAudio: true,
+                    offerToReceiveVideo: isVideoParam,
+                  });
+                  await currentPC.setLocalDescription(offer);
+                  channelRef.current?.send({
+                    type: 'broadcast',
+                    event: 'webrtc_signal',
+                    payload: {
+                      type: 'offer',
+                      sdp: offer,
+                      from: user.id,
+                    },
+                  });
+                } catch (e) {
+                  console.error('Error creating SDP Offer:', e);
+                }
               }
+            } else {
+              // Partner quietly awaits incoming caller offer
+              console.log('Partner received partner_ready from caller, awaiting offer');
             }
             break;
 
           case 'offer':
-            // Receiver gets Offer from Caller
+            console.log('Handling SDP Offer, signaling state:', currentPC.signalingState);
             try {
+              if (currentPC.signalingState !== 'stable') {
+                await Promise.all([
+                  currentPC.setLocalDescription({ type: 'rollback' } as any).catch(() => {}),
+                ]);
+              }
               await currentPC.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-              
+
               // Drain any queued ICE candidates that arrived early
               for (const cand of pendingCandidatesRef.current) {
                 try {
@@ -443,19 +495,20 @@ function CallContent() {
             break;
 
           case 'answer':
-            // Caller receives Answer from Receiver
+            console.log('Handling SDP Answer, signaling state:', currentPC.signalingState);
             try {
-              await currentPC.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-              
-              // Drain any queued ICE candidates
-              for (const cand of pendingCandidatesRef.current) {
-                try {
-                  await currentPC.addIceCandidate(new RTCIceCandidate(cand));
-                } catch (ce) {
-                  console.warn('Error draining candidate:', ce);
+              if (currentPC.signalingState === 'have-local-offer') {
+                await currentPC.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+
+                for (const cand of pendingCandidatesRef.current) {
+                  try {
+                    await currentPC.addIceCandidate(new RTCIceCandidate(cand));
+                  } catch (ce) {
+                    console.warn('Error draining candidate:', ce);
+                  }
                 }
+                pendingCandidatesRef.current = [];
               }
-              pendingCandidatesRef.current = [];
             } catch (e) {
               console.error('Error handling SDP Answer:', e);
             }
@@ -470,7 +523,6 @@ function CallContent() {
                   console.warn('Error adding ICE candidate:', e);
                 }
               } else {
-                // Queue until remote description is set
                 pendingCandidatesRef.current.push(payload.candidate);
               }
             }
@@ -495,8 +547,9 @@ function CallContent() {
           stopAllMedia();
           setCallStatus('declined');
         })
-        .subscribe((status) => {
+        .subscribe(async (status) => {
           if (status === 'SUBSCRIBED') {
+            console.log('Room channel subscribed successfully:', roomId);
             // If caller, send push/in-app alert to partner's notification channel
             if (isCaller && partnerId) {
               broadcastIncomingCall({
@@ -517,6 +570,28 @@ function CallContent() {
               event: 'webrtc_signal',
               payload: { type: 'partner_ready', from: user.id },
             });
+
+            // If caller, create and broadcast initial offer immediately
+            if (isCaller && pcRef.current) {
+              try {
+                const initialOffer = await pcRef.current.createOffer({
+                  offerToReceiveAudio: true,
+                  offerToReceiveVideo: isVideoParam,
+                });
+                await pcRef.current.setLocalDescription(initialOffer);
+                roomChannel.send({
+                  type: 'broadcast',
+                  event: 'webrtc_signal',
+                  payload: {
+                    type: 'offer',
+                    sdp: initialOffer,
+                    from: user.id,
+                  },
+                });
+              } catch (err) {
+                console.warn('Initial offer broadcast error:', err);
+              }
+            }
           }
         });
 
@@ -545,20 +620,20 @@ function CallContent() {
 
     initializeCall();
 
-    // Continuous keepalive ping: sends partner_ready while connecting, and ping while connected
-    // This keeps UDP NAT pinholes open indefinitely and prevents Realtime WebSocket timeouts for unlimited calls!
+    // Continuous keepalive ping: keeps Realtime WebSocket alive and NAT pinholes open indefinitely for unlimited duration
     const keepaliveInterval = setInterval(() => {
       if (channelRef.current && pcRef.current) {
+        const isConn = pcRef.current.connectionState === 'connected';
         channelRef.current.send({
           type: 'broadcast',
           event: 'webrtc_signal',
           payload: { 
-            type: pcRef.current.connectionState === 'connected' ? 'ping' : 'partner_ready', 
+            type: isConn ? 'ping' : 'partner_ready', 
             from: user.id 
           },
         });
       }
-    }, 4000);
+    }, 3500);
 
     return () => {
       isMounted = false;
@@ -810,11 +885,49 @@ function CallContent() {
     return `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
+  // Ensure local camera video stream stays securely attached to viewport
+  useEffect(() => {
+    if (localVideoRef.current && streamRef.current && videoActive) {
+      if (localVideoRef.current.srcObject !== streamRef.current) {
+        localVideoRef.current.srcObject = streamRef.current;
+      }
+      localVideoRef.current.play().catch(() => {});
+    }
+  }, [videoActive, callStatus]);
+
+  // Ensure remote partner video and audio streams stay securely attached to viewports
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteMediaStreamRef.current) {
+      if (remoteVideoRef.current.srcObject !== remoteMediaStreamRef.current) {
+        remoteVideoRef.current.srcObject = remoteMediaStreamRef.current;
+      }
+      remoteVideoRef.current.play().catch(() => {});
+    }
+    if (remoteAudioRef.current && remoteMediaStreamRef.current) {
+      if (remoteAudioRef.current.srcObject !== remoteMediaStreamRef.current) {
+        remoteAudioRef.current.srcObject = remoteMediaStreamRef.current;
+      }
+      remoteAudioRef.current.play().catch(() => {});
+    }
+  }, [hasRemoteStream, callStatus]);
+
   return (
     <div data-fullscreen-route="true" className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-2 sm:py-6 h-[calc(100dvh-4.5rem)] md:h-[calc(100dvh-5.5rem)] flex flex-col justify-between space-y-2 sm:space-y-3">
       
       {/* Hidden audio element dedicated to remote audio stream */}
-      <audio ref={remoteAudioRef} autoPlay playsInline />
+      <audio
+        ref={(el) => {
+          remoteAudioRef.current = el;
+          if (el && remoteMediaStreamRef.current && remoteMediaStreamRef.current.getAudioTracks().length > 0) {
+            if (el.srcObject !== remoteMediaStreamRef.current) {
+              el.srcObject = remoteMediaStreamRef.current;
+            }
+            el.play().catch(() => {});
+          }
+        }}
+        autoPlay
+        playsInline
+      />
 
       {/* Top Floating Header Control Bar */}
       <div className="saas-card bg-white dark:bg-[#060a14] border-slate-200 dark:border-white/10 shadow-sm p-2.5 sm:p-4 flex items-center justify-between z-20">
@@ -880,11 +993,20 @@ function CallContent() {
         {/* Remote Partner Screen (Full screen on mobile, 1st col on desktop) */}
         <div className="relative w-full h-full rounded-2xl sm:rounded-3xl overflow-hidden bg-gradient-to-b from-[#0b1329] via-[#070d1d] to-[#040814] border border-white/10 flex flex-col items-center justify-center p-4 sm:p-6 shadow-2xl">
           
-          {/* Live Video Stream from Partner */}
+          {/* Live Video Stream from Partner (Muted so browser autoplay policy never blocks it) */}
           <video
-            ref={remoteVideoRef}
+            ref={(el) => {
+              remoteVideoRef.current = el;
+              if (el && remoteMediaStreamRef.current && remoteMediaStreamRef.current.getTracks().length > 0) {
+                if (el.srcObject !== remoteMediaStreamRef.current) {
+                  el.srcObject = remoteMediaStreamRef.current;
+                }
+                el.play().catch(() => {});
+              }
+            }}
             autoPlay
             playsInline
+            muted
             className={`w-full h-full object-cover absolute inset-0 transition-opacity duration-500 ${hasRemoteStream ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none'}`}
           />
 
@@ -972,7 +1094,13 @@ function CallContent() {
             </div>
           ) : (
             <video
-              ref={localVideoRef}
+              ref={(el) => {
+                localVideoRef.current = el;
+                if (el && streamRef.current && el.srcObject !== streamRef.current) {
+                  el.srcObject = streamRef.current;
+                  el.play().catch(() => {});
+                }
+              }}
               autoPlay
               playsInline
               muted
