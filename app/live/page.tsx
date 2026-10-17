@@ -86,9 +86,8 @@ export default function LiveRoomPage() {
   const { isFr } = useTranslation();
   const supabase = createClient();
 
-  // Multi-seats participants capacity (multiple seats without 6 limit)
-  const DEFAULT_SEATS_COUNT = 12;
-  const [maxParticipants, setMaxParticipants] = useState(DEFAULT_SEATS_COUNT);
+  // Open floor unlimited seats capacity (no fixed seat limit)
+  const INITIAL_SEATS_COUNT = 12;
 
   const [seats, setSeats] = useState<LiveSeat[]>([]);
   const [topicIndex, setTopicIndex] = useState(0);
@@ -132,7 +131,7 @@ export default function LiveRoomPage() {
       return list;
     };
 
-    const initialSeats: LiveSeat[] = buildSeatList(maxParticipants);
+    const initialSeats: LiveSeat[] = buildSeatList(INITIAL_SEATS_COUNT);
     setSeats(initialSeats);
 
     // Real Supabase Presence Channel for the Live Roundtable
@@ -161,7 +160,7 @@ export default function LiveRoomPage() {
         // Reconstruct live seats purely from genuine connected participants
         setSeats(prev => {
           const maxPresSeat = seatedPresences.reduce((acc, p) => Math.max(acc, p.seatNumber || 1), 1);
-          const totalCountNeeded = Math.max(maxParticipants, prev.length, maxPresSeat);
+          const totalCountNeeded = Math.max(INITIAL_SEATS_COUNT, prev.length, maxPresSeat);
           const updated = buildSeatList(totalCountNeeded);
 
           for (const s of seatedPresences) {
@@ -226,35 +225,32 @@ export default function LiveRoomPage() {
 
 
 
-  // Total seated participants count
+  // Total seated participants count & Unlimited floor capacity
   const occupiedSeatsCount = seats.filter(s => s.user !== null).length;
-  const isRoomFull = occupiedSeatsCount >= maxParticipants;
+  const isRoomFull = false; // Completely UNLIMITED: anyone can speak live anytime without seat cap
 
   // Add more seats dynamically to the round table
   const handleAddMoreSeats = (countToAdd = 4) => {
     playSound('click');
-    setMaxParticipants(prev => {
-      const nextCount = prev + countToAdd;
-      setSeats(currentSeats => {
-        const copy = [...currentSeats];
-        for (let i = currentSeats.length + 1; i <= nextCount; i++) {
-          copy.push({
-            seatNumber: i,
-            user: null,
-            isHost: false,
-            isMuted: false,
-            isVideoOn: true,
-            isSpeaking: false,
-            handRaised: false,
-          });
-        }
-        return copy;
-      });
-      return nextCount;
+    setSeats(currentSeats => {
+      const copy = [...currentSeats];
+      const nextCount = copy.length + countToAdd;
+      for (let i = copy.length + 1; i <= nextCount; i++) {
+        copy.push({
+          seatNumber: i,
+          user: null,
+          isHost: false,
+          isMuted: false,
+          isVideoOn: true,
+          isSpeaking: false,
+          handRaised: false,
+        });
+      }
+      return copy;
     });
   };
 
-  // Join a seat on the live floor
+  // Join a seat on the unlimited live floor
   const handleJoinSeat = (targetSeatNumber?: number) => {
     if (!user || !profile) {
       playSound('click');
@@ -262,27 +258,33 @@ export default function LiveRoomPage() {
       return;
     }
 
-    if (isRoomFull && mySeatNumber === null) {
-      playSound('click');
-      alert(isFr 
-        ? `Tous les ${maxParticipants} sièges sont actuellement occupés ! Vous pouvez ajouter des sièges supplémentaires ou écouter en spectateur.` 
-        : `All ${maxParticipants} seats are currently occupied! You can add more seats or listen as spectator.`);
-      return;
-    }
-
     playSound('call');
 
-    // Find requested or first open seat
-    const emptyIndex = targetSeatNumber 
+    // Find requested or first open seat, or dynamically expand floor if all existing are occupied
+    let emptyIndex = targetSeatNumber 
       ? targetSeatNumber - 1 
       : seats.findIndex(s => s.user === null);
 
-    if (emptyIndex === -1) return;
+    // If all existing seats are occupied, dynamically append a new seat (Unlimited)
+    if (emptyIndex === -1) {
+      emptyIndex = seats.length;
+    }
 
     const newSeatNum = emptyIndex + 1;
 
     setSeats(prev => {
       const updated = [...prev];
+      while (updated.length <= emptyIndex) {
+        updated.push({
+          seatNumber: updated.length + 1,
+          user: null,
+          isHost: false,
+          isMuted: false,
+          isVideoOn: true,
+          isSpeaking: false,
+          handRaised: false,
+        });
+      }
       updated[emptyIndex] = {
         seatNumber: newSeatNum,
         user: profile,
@@ -580,14 +582,14 @@ export default function LiveRoomPage() {
           <div className="flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-xs font-semibold text-slate-700 dark:text-slate-300">
             <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 dark:text-emerald-400" />
             <span>
-              <strong>{occupiedSeatsCount} / {maxParticipants}</strong> <span className="hidden xs:inline">{isFr ? 'sièges' : 'seats'}</span>
+              <strong>{occupiedSeatsCount}</strong> <span className="hidden xs:inline">{isFr ? 'sur scène' : 'on stage'}</span> • <span className="text-emerald-600 dark:text-emerald-400 font-extrabold">{isFr ? 'Places Illimitées (∞)' : 'Unlimited (∞)'}</span>
             </span>
           </div>
 
           <button
             type="button"
             onClick={() => handleAddMoreSeats(4)}
-            className="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold bg-white/5 hover:bg-white/10 border border-white/10 text-slate-700 dark:text-slate-300 transition-colors flex items-center gap-1 cursor-pointer"
+            className="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 transition-colors flex items-center gap-1 cursor-pointer"
             title={isFr ? "Ajouter 4 sièges supplémentaires" : "Add 4 more seats"}
           >
             <span>+4 {isFr ? 'sièges' : 'seats'}</span>
@@ -610,19 +612,11 @@ export default function LiveRoomPage() {
           ) : (
             <button
               onClick={() => handleJoinSeat()}
-              disabled={isRoomFull}
-              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
-                isRoomFull
-                  ? 'bg-slate-100 dark:bg-white/10 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-white/5 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black shadow-[0_0_20px_rgba(74,222,128,0.35)] hover:scale-105 active:scale-95'
-              }`}
+              className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black shadow-[0_0_20px_rgba(74,222,128,0.35)] hover:scale-105 active:scale-95 cursor-pointer"
             >
               <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span>
-                {isRoomFull
-                  ? (isFr ? `Complet (${occupiedSeatsCount}/${maxParticipants})` : `Full (${occupiedSeatsCount}/${maxParticipants})`)
-                  : (isFr ? '🎙️ Rejoindre' : '🎙️ Join Live')}
-              </span>
+              <span>{isFr ? '🎙️ Rejoindre' : '🎙️ Join Live'}</span>
+              <span className="px-1.5 py-0.2 rounded bg-black/20 text-[10px] font-black">∞</span>
             </button>
           )}
         </div>
@@ -862,8 +856,8 @@ export default function LiveRoomPage() {
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0" />
                     <span>
                       {isFr 
-                        ? "Mode spectateur actif — Choisissez un siège ci-dessous ou rejoignez la scène pour pratiquer !" 
-                        : "Spectator mode active — Pick any seat below or take the floor to speak live!"}
+                        ? "Scène Ouverte Illimitée — Prenez la parole en direct ou choisissez n'importe quel siège ci-dessous !" 
+                        : "Open Floor (Unlimited) — Take the floor to speak live or choose any seat below!"}
                     </span>
                   </div>
 
@@ -874,26 +868,19 @@ export default function LiveRoomPage() {
                       className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 transition-colors flex items-center gap-1 cursor-pointer"
                       title={isFr ? "Ajouter 4 sièges supplémentaires" : "Add 4 more seats"}
                     >
-                      <span>+4 {isFr ? 'sièges' : 'seats'}</span>
+                      <span>+ {isFr ? 'Ajouter Sièges (∞)' : 'Add Seats (∞)'}</span>
                     </button>
 
                     <button
                       onClick={() => handleJoinSeat()}
-                      disabled={isRoomFull}
-                      className={`px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow-lg ${
-                        isRoomFull
-                          ? 'bg-slate-100 dark:bg-white/10 text-slate-400 dark:text-slate-500 cursor-not-allowed'
-                          : 'bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 shadow-[0_0_20px_rgba(74,222,128,0.35)] hover:scale-105 active:scale-95'
-                      }`}
+                      className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow-lg bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 shadow-[0_0_20px_rgba(74,222,128,0.35)] hover:scale-105 active:scale-95 cursor-pointer"
                     >
                       <Mic className="w-4 h-4" />
                       <span>
-                        {isRoomFull
-                          ? (isFr ? `Salle Complète (${occupiedSeatsCount}/${maxParticipants})` : `Room Full (${occupiedSeatsCount}/${maxParticipants})`)
-                          : (isFr ? 'Prendre la parole (Rejoindre)' : 'Take the floor (Join)')}
+                        {isFr ? 'Prendre la parole (Illimité)' : 'Take the floor (Unlimited)'}
                       </span>
-                      <span className="px-1.5 py-0.5 rounded-md bg-black/20 text-[10px]">
-                        {occupiedSeatsCount}/{maxParticipants}
+                      <span className="px-1.5 py-0.5 rounded-md bg-black/20 text-[10px] font-black">
+                        ∞ {isFr ? 'Places' : 'Seats'}
                       </span>
                     </button>
                   </div>
@@ -904,10 +891,10 @@ export default function LiveRoomPage() {
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                       <Users className="w-3.5 h-3.5 text-emerald-500" />
-                      <span>{isFr ? "Choisir et prendre un siège sur la scène :" : "Take a seat on the floor:"}</span>
+                      <span>{isFr ? "Prendre un siège sur la scène (Accès Illimité) :" : "Take a seat on the floor (Unlimited Access):"}</span>
                     </span>
                     <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                      {occupiedSeatsCount} {isFr ? 'occupé(s)' : 'occupied'} • {maxParticipants - occupiedSeatsCount} {isFr ? 'libre(s)' : 'open'}
+                      <strong>{occupiedSeatsCount}</strong> {isFr ? 'sur scène' : 'on stage'} • <span className="text-emerald-500 font-bold">{isFr ? 'Places Illimitées (∞)' : 'Unlimited Seats (∞)'}</span>
                     </span>
                   </div>
 
@@ -945,6 +932,16 @@ export default function LiveRoomPage() {
                         </button>
                       );
                     })}
+
+                    {/* Quick button to expand seats in the row */}
+                    <button
+                      type="button"
+                      onClick={() => handleAddMoreSeats(4)}
+                      className="px-2.5 py-1.5 rounded-xl text-xs font-bold border border-dashed border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                      title={isFr ? "Ajouter 4 sièges supplémentaires" : "Add 4 more seats"}
+                    >
+                      <span>+ {isFr ? 'Sièges (∞)' : 'Seats (∞)'}</span>
+                    </button>
                   </div>
                 </div>
               </div>
