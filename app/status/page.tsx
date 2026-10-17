@@ -25,11 +25,9 @@ import {
   Play,
   Volume2,
   Trash2,
-  Keyboard as KeyboardIcon,
   Send,
   ShieldCheck
 } from 'lucide-react';
-import EnglishVirtualKeyboard from '@/components/EnglishVirtualKeyboard';
 import { verifyTextLinguisticEnglish } from '@/lib/aiVideoModeration';
 
 export default function StatusSpacePage() {
@@ -42,10 +40,9 @@ export default function StatusSpacePage() {
   const [loading, setLoading] = useState(true);
   const [likedMap, setLikedMap] = useState<Record<string, boolean>>({});
 
-  // Quick Composer with English Keyboard
+  // Quick Composer
   const [quickText, setQuickText] = useState('');
   const [quickTag, setQuickTag] = useState('#DailyThought');
-  const [showPageKeyboard, setShowPageKeyboard] = useState(false);
   const [quickSubmitting, setQuickSubmitting] = useState(false);
 
   useEffect(() => {
@@ -248,41 +245,27 @@ export default function StatusSpacePage() {
         <EnglishStatusTray />
       </div>
 
-      {/* QUICK STATUS COMPOSER WITH INTEGRATED ENGLISH KEYBOARD */}
+      {/* QUICK STATUS COMPOSER */}
       <div className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-[#080d1a] border border-emerald-500/30 shadow-[0_10px_35px_rgba(0,0,0,0.4)] space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-white/10">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-sm">
-              <KeyboardIcon className="w-5 h-5" />
+              <MessageSquare className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                <span>{isFr ? 'Clavier Anglais & Statut Rapide' : 'English Keyboard & Quick Status'}</span>
+                <span>{isFr ? 'Statut Rapide' : 'Quick Status'}</span>
                 <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  QWERTY + Idioms
+                  English Only
                 </span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {isFr 
-                  ? 'Tapez directement avec le clavier anglais, les contractions (I\'m, don\'t) et expressions courantes.' 
-                  : 'Type naturally with English QWERTY, native contractions (I\'m, don\'t) and idioms.'}
+                  ? 'Partagez une pensée, une astuce de prononciation ou une expression en anglais.' 
+                  : 'Share a thought, pronunciation tip or idiom in English.'}
               </p>
             </div>
           </div>
-
-          {/* Toggle Keyboard Button */}
-          <button
-            type="button"
-            onClick={() => setShowPageKeyboard(!showPageKeyboard)}
-            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-              showPageKeyboard
-                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-sm'
-                : 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:text-emerald-400'
-            }`}
-          >
-            <KeyboardIcon className="w-4 h-4" />
-            <span>{showPageKeyboard ? (isFr ? 'Masquer Clavier' : 'Hide Keyboard') : (isFr ? '🇬🇧 Ouvrir Clavier Anglais' : '🇬🇧 Open English Keyboard')}</span>
-          </button>
         </div>
 
         {/* Quick Composer Form */}
@@ -345,14 +328,6 @@ export default function StatusSpacePage() {
             </div>
           </div>
 
-          {/* Integrated English Virtual Keyboard */}
-          <EnglishVirtualKeyboard
-            isOpen={showPageKeyboard}
-            onToggle={() => setShowPageKeyboard(!showPageKeyboard)}
-            onInsertText={(text) => setQuickText(prev => prev + text)}
-            onDeleteChar={() => setQuickText(prev => prev.slice(0, -1))}
-            onClear={() => setQuickText('')}
-          />
         </form>
       </div>
 
