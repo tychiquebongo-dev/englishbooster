@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { savePushSubscription } from '@/lib/pushStore';
+import { savePushSubscription, getPushSubscriptions } from '@/lib/pushStore';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { userId, subscription } = body;
+    const { userId, subscription, deviceType } = body;
 
     if (!userId || !subscription || !subscription.endpoint) {
       return NextResponse.json(
@@ -15,11 +15,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    savePushSubscription(userId, subscription);
+    savePushSubscription(userId, subscription, deviceType);
+    const count = getPushSubscriptions(userId).length;
 
     return NextResponse.json({
       success: true,
-      message: 'Push subscription successfully registered for offline notifications',
+      registeredCount: count,
+      message: 'Push subscription successfully registered for offline background notifications',
     });
   } catch (err: any) {
     console.error('Error in /api/push/subscribe:', err);

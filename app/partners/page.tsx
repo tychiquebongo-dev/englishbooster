@@ -116,7 +116,11 @@ export default function PartnersPage() {
                 : (p.target_level 
                   ? `${isFr ? 'Objectif' : 'Goal'} ${p.target_level}` 
                   : (isFr ? 'Conversation Réelle' : 'Real Conversation')),
-              interests: isFounder ? ['Public Speaking', 'Coaching', 'Leadership', 'Tech'] : (p.interests && p.interests.length > 0 ? p.interests : ['Conversation', 'Travel', 'Tech']),
+              interests: isFounder 
+                ? ['Public Speaking', 'Coaching', 'Leadership', 'Tech'] 
+                : (p.interests && p.interests.filter((i: string) => !i.startsWith('__eb_push__:')).length > 0 
+                    ? p.interests.filter((i: string) => !i.startsWith('__eb_push__:')) 
+                    : ['Conversation', 'Travel', 'Tech']),
               is_online: Boolean(p.is_online && p.updated_at && (Date.now() - new Date(p.updated_at).getTime() < 90000)),
               streak: p.streak ?? 0,
             };
@@ -189,7 +193,7 @@ export default function PartnersPage() {
     else score += 5;
 
     // Check shared interests
-    const userInterests = profile?.interests || [];
+    const userInterests = (profile?.interests || []).filter((i: string) => !i.startsWith('__eb_push__:'));
     const shared = partner.interests.filter(i => userInterests.includes(i));
     score += Math.min(10, shared.length * 4);
 

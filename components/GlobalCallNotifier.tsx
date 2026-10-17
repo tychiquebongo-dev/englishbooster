@@ -133,9 +133,20 @@ export default function GlobalCallNotifier() {
             icon: payload.callerAvatar || '/assets/images/logo.svg',
             badge: '/assets/images/logo.svg',
             tag: 'eb-incoming-call',
-            data: { url: callUrl },
+            data: { 
+              url: callUrl,
+              roomId: payload.roomId,
+              callerId: payload.callerId,
+              isVideo: payload.isVideo,
+            },
             requireInteraction: true,
-            vibrate: [500, 250, 500, 250, 1000],
+            renotify: true,
+            silent: false,
+            vibrate: [500, 250, 500, 250, 1000, 500, 1000, 500, 1000],
+            actions: [
+              { action: 'answer', title: payload.isVideo ? '📹 Décrocher' : '📞 Décrocher' },
+              { action: 'decline', title: '❌ Refuser' }
+            ]
           } as any);
           return;
         }

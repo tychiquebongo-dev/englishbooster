@@ -34,7 +34,32 @@ export async function broadcastIncomingCall(payload: IncomingCallPayload) {
   const chatChannelName = `chat_${[payload.callerId, payload.receiverId].sort().join('_')}`;
   const roomChannelName = `call-room-${payload.roomId}`;
 
-  // 1. Immediately send native background Web Push notification (wakes phone/device even if offline or app closed)
+  // 1. Pull receiver's active device push tokens from Supabase public profile
+  let receiverPushSubscriptions: any[] = [];
+  try {
+    const { data: recProf } = await supabase
+      .from('profiles')
+      .select('interests')
+      .eq('id', payload.receiverId)
+      .maybeSingle();
+
+    if (recProf?.interests && Array.isArray(recProf.interests)) {
+      receiverPushSubscriptions = recProf.interests
+        .filter((item: string) => typeof item === 'string' && item.startsWith('__eb_push__:'))
+        .map((item: string) => {
+          try {
+            return JSON.parse(item.replace('__eb_push__:', ''));
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean);
+    }
+  } catch (err) {
+    console.warn('Could not read receiver push token from profile:', err);
+  }
+
+  // 1b. Immediately send native background Web Push notification (wakes phone/device even if offline or app closed)
   try {
     fetch('/api/push/send', {
       method: 'POST',
@@ -42,11 +67,14 @@ export async function broadcastIncomingCall(payload: IncomingCallPayload) {
       keepalive: true,
       body: JSON.stringify({
         receiverId: payload.receiverId,
+        subscriptions: receiverPushSubscriptions,
         type: 'call',
         title: payload.isVideo
           ? `📹 Appel Vidéo entrant : ${payload.callerName}`
           : `📞 Appel Vocal entrant : ${payload.callerName}`,
-        body: `${payload.callerName} vous appelle en direct sur English Booster. Appuyez pour décrocher.`,
+        body: payload.isVideo
+          ? `${payload.callerName} vous invite en appel vidéo HD. Touchez pour décrocher.`
+          : `${payload.callerName} vous appelle en direct. Touchez pour décrocher.`,
         icon: payload.callerAvatar || '/assets/images/logo.svg',
         url: `/call?partnerId=${payload.callerId}&partnerName=${encodeURIComponent(payload.callerName)}&roomId=${payload.roomId}&video=${payload.isVideo}&autoAnswer=true`,
         callerId: payload.callerId,
@@ -411,14 +439,56 @@ export async function registerPushSubscription(userId: string) {
     }
 
     if (sub) {
+      const subJson = sub.toJSON();
+      const isMobile = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      const deviceType = isMobile ? 'mobile' : 'desktop';
+
+      // 1. Register with server push store
       await fetch('/api/push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId,
-          subscription: sub.toJSON(),
+          subscription: subJson,
+          deviceType,
         }),
-      });
+      }).catch(() => {});
+
+      // 2. Synchronize push token into user's public profile row in Supabase
+      try {
+        const supabase = createClient();
+        const { data: myProf } = await supabase
+          .from('profiles')
+          .select('interests')
+          .eq('id', userId)
+          .maybeSingle();
+
+        const currentInterests = Array.isArray(myProf?.interests) ? myProf.interests : [];
+        const myEndpoint = subJson.endpoint;
+
+        // Keep normal interest tags and prune any older subscription with this exact endpoint
+        const cleanInterests = currentInterests.filter((item: string) => {
+          if (typeof item !== 'string' || !item.startsWith('__eb_push__:')) return true;
+          try {
+            const parsed = JSON.parse(item.replace('__eb_push__:', ''));
+            return parsed.endpoint !== myEndpoint;
+          } catch {
+            return false;
+          }
+        });
+
+        const token = `__eb_push__:${JSON.stringify(subJson)}`;
+        await supabase
+          .from('profiles')
+          .update({
+            interests: [...cleanInterests, token],
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', userId);
+      } catch (dbErr) {
+        console.warn('Could not sync push token to Supabase profile:', dbErr);
+      }
+
       return sub;
     }
   } catch (err) {
