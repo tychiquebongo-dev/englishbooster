@@ -1,9 +1,9 @@
 // English Booster Production Service Worker for Background Call & Message Notifications
 // Handles Web Push events even when the application is closed or phone is locked (Hors-Application / Background)
 
-const EB_CACHE_NAME = 'eb-pwa-v4';
+const EB_CACHE_NAME = 'eb-pwa-v5';
 
-// Install event: Pre-cache PWA core assets for instant launch & Chromium installability
+// Install event: Pre-cache PWA core assets for instant launch & background ringtones
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(EB_CACHE_NAME).then((cache) => {
@@ -13,6 +13,7 @@ self.addEventListener('install', (event) => {
         '/assets/images/logo.svg',
         '/assets/images/icon-192.png',
         '/assets/images/icon-512.png',
+        '/assets/sounds/phone-ring.wav',
       ]).catch(() => {});
     })
   );
@@ -100,13 +101,14 @@ self.addEventListener('push', (event) => {
     icon,
     badge: '/assets/images/logo.svg',
     image: data.image || undefined,
-    tag: data.tag || (isCall ? 'eb-incoming-call' : `eb-msg-${Date.now()}`),
+    tag: isCall ? 'eb-incoming-call' : `eb-msg-${Date.now()}`,
     renotify: true,
     requireInteraction: isCall,
     silent: false,
-    // Phone physical vibration rhythm simulates incoming phone ringtone (cadence)
+    sound: isCall ? '/assets/sounds/phone-ring.wav' : undefined,
+    // Realistic phone ringer physical vibration cadence (ringing pulse pattern lasting ~18 seconds)
     vibrate: isCall 
-      ? [1000, 400, 1000, 400, 1000, 400, 1000, 400, 1000] 
+      ? [1000, 500, 1000, 500, 1000, 500, 1000, 500, 1000, 500, 1000, 500, 1000, 500, 1000, 500] 
       : [250, 150, 250],
     data: {
       url: targetUrl,

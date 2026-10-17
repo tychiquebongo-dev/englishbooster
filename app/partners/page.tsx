@@ -85,7 +85,7 @@ export default function PartnersPage() {
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
 
   // Directly initiate call and immediately ring partner's phone & wake notification
-  const handleCallPartner = (e: React.MouseEvent, partner: DisplayPartner) => {
+  const handleCallPartner = async (e: React.MouseEvent, partner: DisplayPartner) => {
     e.preventDefault();
     playSound('call');
 
@@ -98,16 +98,20 @@ export default function PartnersPage() {
 
     // Immediately trigger background Web Push and Realtime notifications to ring partner's phone
     if (user?.id) {
-      broadcastIncomingCall({
-        callerId: user.id,
-        callerName: profile?.full_name || 'English Learner',
-        callerAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
-        callerFlag: profile?.flag || '🌐',
-        callerLevel: profile?.current_level || 'B2',
-        receiverId: partner.id,
-        roomId: roomId,
-        isVideo: true,
-      }).catch((err) => console.warn('Partner immediate call broadcast error:', err));
+      try {
+        await broadcastIncomingCall({
+          callerId: user.id,
+          callerName: profile?.full_name || 'English Learner',
+          callerAvatar: getUserAvatar(profile?.avatar_url, profile?.full_name, user.email),
+          callerFlag: profile?.flag || '🌐',
+          callerLevel: profile?.current_level || 'B2',
+          receiverId: partner.id,
+          roomId: roomId,
+          isVideo: true,
+        });
+      } catch (err) {
+        console.warn('Partner immediate call broadcast error:', err);
+      }
     }
 
     router.push(`/call?partnerId=${partner.id}&partnerName=${encodeURIComponent(partner.name)}&video=true&roomId=${roomId}`);

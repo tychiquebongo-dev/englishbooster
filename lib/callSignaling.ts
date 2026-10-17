@@ -34,57 +34,59 @@ export async function broadcastIncomingCall(payload: IncomingCallPayload) {
   const chatChannelName = `chat_${[payload.callerId, payload.receiverId].sort().join('_')}`;
   const roomChannelName = `call-room-${payload.roomId}`;
 
-  // 1. Pull receiver's active device push tokens from Supabase public profile
-  let receiverPushSubscriptions: any[] = [];
-  try {
-    const { data: recProf } = await supabase
-      .from('profiles')
-      .select('interests')
-      .eq('id', payload.receiverId)
-      .maybeSingle();
+  // 1. Immediately launch native background Web Push notification to wake receiver's phone/lockscreen
+  const pushPromise = (async () => {
+    try {
+      // Gather any receiver push subscriptions cached on client
+      let receiverPushSubscriptions: any[] = [];
+      try {
+        const { data: recProf } = await supabase
+          .from('profiles')
+          .select('interests')
+          .eq('id', payload.receiverId)
+          .maybeSingle();
 
-    if (recProf?.interests && Array.isArray(recProf.interests)) {
-      receiverPushSubscriptions = recProf.interests
-        .filter((item: string) => typeof item === 'string' && item.startsWith('__eb_push__:'))
-        .map((item: string) => {
-          try {
-            return JSON.parse(item.replace('__eb_push__:', ''));
-          } catch {
-            return null;
-          }
-        })
-        .filter(Boolean);
+        if (recProf?.interests && Array.isArray(recProf.interests)) {
+          receiverPushSubscriptions = recProf.interests
+            .filter((item: string) => typeof item === 'string' && item.startsWith('__eb_push__:'))
+            .map((item: string) => {
+              try {
+                return JSON.parse(item.replace('__eb_push__:', ''));
+              } catch {
+                return null;
+              }
+            })
+            .filter(Boolean);
+        }
+      } catch {}
+
+      await fetch('/api/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({
+          receiverId: payload.receiverId,
+          subscriptions: receiverPushSubscriptions,
+          type: 'call',
+          title: payload.isVideo
+            ? `📹 Appel Vidéo entrant : ${payload.callerName}`
+            : `📞 Appel Vocal entrant : ${payload.callerName}`,
+          body: payload.isVideo
+            ? `${payload.callerName} vous invite en appel vidéo HD. Touchez pour décrocher.`
+            : `${payload.callerName} vous appelle en direct sur English Booster. Touchez pour décrocher.`,
+          icon: payload.callerAvatar || '/assets/images/logo.svg',
+          url: `/call?partnerId=${payload.callerId}&partnerName=${encodeURIComponent(payload.callerName)}&roomId=${payload.roomId}&video=${payload.isVideo}&autoAnswer=true`,
+          callerId: payload.callerId,
+          callerName: payload.callerName,
+          callerAvatar: payload.callerAvatar,
+          roomId: payload.roomId,
+          isVideo: payload.isVideo,
+        }),
+      });
+    } catch (pushErr) {
+      console.warn('Immediate push dispatch error:', pushErr);
     }
-  } catch (err) {
-    console.warn('Could not read receiver push token from profile:', err);
-  }
-
-  // 1b. Immediately send native background Web Push notification (wakes phone/device even if offline or app closed)
-  try {
-    fetch('/api/push/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      keepalive: true,
-      body: JSON.stringify({
-        receiverId: payload.receiverId,
-        subscriptions: receiverPushSubscriptions,
-        type: 'call',
-        title: payload.isVideo
-          ? `📹 Appel Vidéo entrant : ${payload.callerName}`
-          : `📞 Appel Vocal entrant : ${payload.callerName}`,
-        body: payload.isVideo
-          ? `${payload.callerName} vous invite en appel vidéo HD. Touchez pour décrocher.`
-          : `${payload.callerName} vous appelle en direct. Touchez pour décrocher.`,
-        icon: payload.callerAvatar || '/assets/images/logo.svg',
-        url: `/call?partnerId=${payload.callerId}&partnerName=${encodeURIComponent(payload.callerName)}&roomId=${payload.roomId}&video=${payload.isVideo}&autoAnswer=true`,
-        callerId: payload.callerId,
-        callerName: payload.callerName,
-        callerAvatar: payload.callerAvatar,
-        roomId: payload.roomId,
-        isVideo: payload.isVideo,
-      }),
-    }).catch(() => {});
-  } catch {}
+  })();
 
   // 2. Broadcast immediately to any existing joined channels (e.g. active chat or room)
   try {
@@ -218,7 +220,7 @@ export async function broadcastIncomingCall(payload: IncomingCallPayload) {
     }).then(() => {});
   } catch {}
 
-  await sendToPersonalChannel;
+  await Promise.allSettled([pushPromise, sendToPersonalChannel]);
 }
 
 /**

@@ -50,6 +50,39 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Server-side query to Supabase: Ensure we get all active push tokens for receiver regardless of which lambda/client registered it
+    try {
+      const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://bolmrscavaeiqzytfzej.supabase.co';
+      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJvbG1yc2NhdmFlaXF6eXRmemVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE3NDU2MjEsImV4cCI6MjEwNzMyMTYyMX0.A3lmy57zKqvSxfjRumabXqm5v4MTAe_EvP9MvVBXHrE';
+      const sb = createSupabaseClient(supabaseUrl, supabaseKey);
+
+      const { data: recProf } = await sb
+        .from('profiles')
+        .select('interests')
+        .eq('id', receiverId)
+        .maybeSingle();
+
+      if (recProf?.interests && Array.isArray(recProf.interests)) {
+        const dbSubs = recProf.interests
+          .filter((item: string) => typeof item === 'string' && item.startsWith('__eb_push__:'))
+          .map((item: string) => {
+            try {
+              return JSON.parse(item.replace('__eb_push__:', ''));
+            } catch {
+              return null;
+            }
+          })
+          .filter(Boolean);
+
+        if (dbSubs.length > 0) {
+          candidateSubscriptions.push(...dbSubs);
+        }
+      }
+    } catch (dbErr) {
+      console.warn('Server query for receiver push subscriptions in Supabase failed:', dbErr);
+    }
+
     // Deduplicate by endpoint URL
     const uniqueMap = new Map<string, any>();
     for (const sub of candidateSubscriptions) {

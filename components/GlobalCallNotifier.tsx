@@ -43,11 +43,33 @@ export default function GlobalCallNotifier() {
   const [showPermissionPrompt, setShowPermissionPrompt] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
+  const ringAudioRef = useRef<HTMLAudioElement | null>(null);
   const ringIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const autoDismissTimerRef = useRef<NodeJS.Timeout | null>(null);
   const toastDismissTimerRef = useRef<NodeJS.Timeout | null>(null);
   const activeNotificationRef = useRef<Notification | null>(null);
   const incomingCallRef = useRef<IncomingCallPayload | null>(null);
+
+  // Pre-unlock audio on first touch/click for zero-latency background ringing
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const unlockAudio = () => {
+      if (ringAudioRef.current) {
+        ringAudioRef.current.play().then(() => {
+          ringAudioRef.current?.pause();
+          ringAudioRef.current.currentTime = 0;
+        }).catch(() => {});
+      }
+    };
+
+    window.addEventListener('click', unlockAudio, { once: true });
+    window.addEventListener('touchstart', unlockAudio, { once: true });
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+  }, []);
 
   // Register service worker on mount & check notification permissions
   useEffect(() => {
@@ -62,7 +84,14 @@ export default function GlobalCallNotifier() {
     }
 
     if ('Notification' in window && Notification.permission === 'default') {
-      setShowPermissionPrompt(true);
+      try {
+        const dismissedUntil = localStorage.getItem('eb_notif_prompt_dismissed_until');
+        if (!dismissedUntil || Date.now() > Number(dismissedUntil)) {
+          setShowPermissionPrompt(true);
+        }
+      } catch {
+        setShowPermissionPrompt(true);
+      }
     }
 
     // Capture PWA install prompt for home screen installation (Hors application capability)
@@ -106,6 +135,24 @@ export default function GlobalCallNotifier() {
       window.removeEventListener('eb_call_answered', handleCallAnsweredEvent);
     };
   }, [user?.id, router]);
+
+  // Proactively refresh push token whenever app becomes active / visible
+  useEffect(() => {
+    if (typeof window === 'undefined' || !user?.id) return;
+
+    if ('Notification' in window && Notification.permission === 'granted') {
+      registerPushSubscription(user.id);
+    }
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && 'Notification' in window && Notification.permission === 'granted') {
+        registerPushSubscription(user.id);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [user?.id]);
 
   // Device physical vibration trigger
   const triggerVibration = (pattern: number | number[]) => {
@@ -255,13 +302,30 @@ export default function GlobalCallNotifier() {
     try {
       const result = await Notification.requestPermission();
       setShowPermissionPrompt(false);
+      try {
+        localStorage.removeItem('eb_notif_prompt_dismissed_until');
+      } catch {}
+
       if (result === 'granted') {
         playSound('success');
-        triggerVibration([100, 50, 100]);
+        triggerVibration([200, 100, 200, 100, 400]);
 
         // Register Web Push subscription with server so notifications arrive even when hors application!
         if (user?.id) {
           await registerPushSubscription(user.id);
+        }
+
+        // Test audio ringer briefly so partner feels & hears it
+        if (ringAudioRef.current) {
+          ringAudioRef.current.currentTime = 0;
+          ringAudioRef.current.play().then(() => {
+            setTimeout(() => {
+              try {
+                ringAudioRef.current?.pause();
+                ringAudioRef.current.currentTime = 0;
+              } catch {}
+            }, 1200);
+          }).catch(() => {});
         }
 
         // Show confirmation test notification
@@ -271,8 +335,8 @@ export default function GlobalCallNotifier() {
           senderAvatar: '/assets/images/logo.svg',
           receiverId: user?.id || '',
           text: isFr 
-            ? 'Notifications hors-application activées ! Vous recevrez vos alertes d’appels et messages même application fermée ou écran verrouillé.' 
-            : 'Background notifications enabled! You will receive calls and messages even with app closed.',
+            ? '🔔 Sonnerie & vibration du téléphone activées ! Vous recevrez vos appels en direct, même écran verrouillé.' 
+            : '🔔 Phone ringing & vibration enabled! You will receive live calls even with your screen locked.',
         });
       }
     } catch (err) {
@@ -294,6 +358,12 @@ export default function GlobalCallNotifier() {
 
   // Stop Ringing helper
   const stopRinging = () => {
+    if (ringAudioRef.current) {
+      try {
+        ringAudioRef.current.pause();
+        ringAudioRef.current.currentTime = 0;
+      } catch {}
+    }
     if (ringIntervalRef.current) {
       clearInterval(ringIntervalRef.current);
       ringIntervalRef.current = null;
@@ -325,25 +395,40 @@ export default function GlobalCallNotifier() {
 
     incomingCallRef.current = payload;
     setIncomingCall(payload);
-    playSoundRef.current('call');
-    triggerVibration([1000, 400, 1000, 400, 1000, 400, 1000]);
 
-    // 1. Dynamic flashing notification in partner's browser bar (onglet & taskbar)
+    // 1. Play real telephone ringtone audio and Web Audio fallback
+    if (ringAudioRef.current) {
+      ringAudioRef.current.currentTime = 0;
+      ringAudioRef.current.play().catch(() => {
+        playSoundRef.current('call');
+      });
+    } else {
+      playSoundRef.current('call');
+    }
+
+    // 2. Hardware vibration cadence simulating ringing phone
+    triggerVibration([1000, 500, 1000, 500, 1000, 500, 1000, 500, 1000, 500]);
+
+    // 3. Dynamic flashing notification in partner's browser bar (onglet & taskbar)
     notifyBrowserBar({
       type: payload.isVideo ? 'video_call' : 'voice_call',
       senderName: payload.callerName,
       durationMs: 45000,
     });
 
-    // 2. Native HTML5 desktop / mobile notification
+    // 4. Native HTML5 desktop / mobile notification
     showPhoneCallNotification(payload);
 
-    // Loop ringtone sound and phone vibration every 2.8s
+    // Loop ringtone sound and phone vibration every 3.5s
     if (ringIntervalRef.current) clearInterval(ringIntervalRef.current);
     ringIntervalRef.current = setInterval(() => {
-      playSoundRef.current('call');
-      triggerVibration([1000, 400, 1000, 400, 1000, 400, 1000]);
-    }, 2800);
+      if (ringAudioRef.current && ringAudioRef.current.paused) {
+        ringAudioRef.current.play().catch(() => playSoundRef.current('call'));
+      } else if (!ringAudioRef.current) {
+        playSoundRef.current('call');
+      }
+      triggerVibration([1000, 500, 1000, 500, 1000, 500, 1000, 500, 1000, 500]);
+    }, 3500);
 
     // Auto dismiss after 45s as missed call if not answered
     if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current);
@@ -665,35 +750,43 @@ export default function GlobalCallNotifier() {
         </aside>
       )}
 
-      {/* 3. ONE-TAP BACKGROUND NOTIFICATION & PWA ACTIVATION PILL */}
+      {/* 3. PROACTIVE CALL RINGING & HARDWARE VIBRATION PROMPT */}
       {showPermissionPrompt && (
         <aside 
           aria-label="Notification Permission"
-          className="fixed bottom-20 sm:bottom-6 left-3 sm:left-6 sm:right-auto z-[9980] max-w-[calc(100vw-1.5rem)] sm:max-w-sm animate-fade-in safe-pb"
+          className="fixed bottom-4 sm:bottom-6 left-3 right-3 sm:left-auto sm:right-6 sm:max-w-md z-[9985] animate-fade-in safe-pb"
         >
-          <div className="p-3.5 rounded-2xl bg-[#091124]/95 border border-emerald-400/50 shadow-[0_15px_40px_rgba(0,0,0,0.85)] backdrop-blur-xl text-white">
-            <div className="flex items-center justify-between gap-3 mb-2.5">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 shrink-0 shadow-inner">
-                  <Bell className="w-4 h-4 animate-bounce" />
+          <div className="p-4 sm:p-5 rounded-3xl bg-[#070e1f]/95 border-2 border-emerald-400/60 shadow-[0_20px_60px_rgba(0,0,0,0.9)] backdrop-blur-2xl text-white space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="relative p-2.5 rounded-2xl bg-gradient-to-br from-emerald-500/30 to-teal-500/20 text-emerald-400 shrink-0 border border-emerald-400/30 shadow-inner">
+                  <Bell className="w-5 h-5 animate-bounce" />
+                  <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-400 animate-ping" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-bold truncate">
-                    {isFr ? "Alertes hors-application (Fond & Verrouillé)" : "Background alerts (Screen locked)"}
-                  </p>
-                  <p className="text-[10px] text-slate-300 line-clamp-1">
-                    {isFr ? "Recevoir les appels et messages même application fermée" : "Receive calls and messages even with app closed"}
+                  <h4 className="text-sm font-black text-white tracking-tight flex items-center gap-1.5">
+                    <span>{isFr ? "Faire sonner & vibrer votre téléphone" : "Ring & Vibrate your phone on calls"}</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-300 leading-snug mt-0.5">
+                    {isFr 
+                      ? "Activez la sonnerie pour recevoir les appels de vos partenaires même application fermée ou écran verrouillé !" 
+                      : "Enable ringing so your phone rings & vibrates when partners call you even if the app is closed!"}
                   </p>
                 </div>
               </div>
 
               <button
                 type="button"
-                onClick={() => setShowPermissionPrompt(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white transition-colors"
-                title="Dismiss"
+                onClick={() => {
+                  setShowPermissionPrompt(false);
+                  try {
+                    localStorage.setItem('eb_notif_prompt_dismissed_until', String(Date.now() + 6 * 3600 * 1000));
+                  } catch {}
+                }}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors shrink-0"
+                title="Plus tard"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -701,27 +794,50 @@ export default function GlobalCallNotifier() {
               <button
                 type="button"
                 onClick={requestPhoneNotifications}
-                className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 font-black text-xs hover:scale-102 active:scale-98 transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                className="flex-1 py-3 px-4 min-h-[44px] rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-400 to-emerald-300 text-slate-950 font-black text-xs sm:text-sm hover:scale-[1.02] active:scale-95 transition-all shadow-[0_0_25px_rgba(74,222,128,0.45)] flex items-center justify-center gap-2 cursor-pointer"
               >
-                <Bell className="w-3.5 h-3.5" />
-                <span>{isFr ? "Activer les alertes" : "Enable Alerts"}</span>
+                <Phone className="w-4 h-4 animate-pulse text-slate-950" />
+                <span>{isFr ? "Activer la sonnerie du téléphone" : "Enable Phone Ringing & Vibration"}</span>
               </button>
 
-              {deferredPrompt && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPermissionPrompt(false);
+                  try {
+                    localStorage.setItem('eb_notif_prompt_dismissed_until', String(Date.now() + 6 * 3600 * 1000));
+                  } catch {}
+                }}
+                className="py-3 px-3 min-h-[44px] rounded-2xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white font-bold text-xs transition-colors border border-white/10"
+              >
+                {isFr ? "Plus tard" : "Later"}
+              </button>
+            </div>
+
+            {deferredPrompt && (
+              <div className="pt-1 border-t border-white/10">
                 <button
                   type="button"
                   onClick={handleInstallPWA}
-                  className="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs transition-colors flex items-center gap-1.5 border border-white/10 cursor-pointer"
-                  title="Installer l'application sur votre écran d'accueil"
+                  className="w-full py-2 px-3 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 font-bold text-xs transition-colors flex items-center justify-center gap-2 border border-cyan-400/20"
                 >
                   <Download className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>{isFr ? "Installer l'App" : "Install App"}</span>
+                  <span>{isFr ? "Installer aussi sur l'écran d'accueil (PWA)" : "Install to Home Screen (PWA)"}</span>
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </aside>
       )}
+
+      {/* Hidden audio element for instant looped phone ringer */}
+      <audio
+        ref={ringAudioRef}
+        src="/assets/sounds/phone-ring.wav"
+        preload="auto"
+        loop
+        className="hidden"
+      />
     </>
   );
 }
