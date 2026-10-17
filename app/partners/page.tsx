@@ -553,12 +553,12 @@ export default function PartnersPage() {
                           {partner.is_online ? (
                             <span 
                               className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white dark:border-[#060a14] shadow-[0_0_8px_rgba(16,185,129,0.8)]" 
-                              title="on line" 
+                              title="online" 
                             />
                           ) : (
                             <span 
                               className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-dashed border-amber-400 bg-amber-500/40" 
-                              title="outline" 
+                              title="offline" 
                             />
                           )}
                         </div>
@@ -571,11 +571,11 @@ export default function PartnersPage() {
                             {partner.is_online ? (
                               <span className="shrink-0 text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/40 inline-flex items-center gap-1 uppercase tracking-wider">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                on line
+                                online
                               </span>
                             ) : (
                               <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border border-dashed border-amber-400/80 bg-amber-500/10 text-amber-600 dark:text-amber-300 inline-flex items-center gap-1 uppercase tracking-wider">
-                                outline
+                                offline
                               </span>
                             )}
                           </div>

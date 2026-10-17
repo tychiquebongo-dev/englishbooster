@@ -214,7 +214,7 @@ function RealConversationContent() {
   const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
   const [selectedMsgId, setSelectedMsgId] = useState<string | null>(null);
 
-  // Offline Call Signal Outline Warning Modal
+  // Offline Call Warning Modal
   const [showOfflineCallModal, setShowOfflineCallModal] = useState<{
     isOpen: boolean;
     videoMode: boolean;
@@ -2145,12 +2145,12 @@ function RealConversationContent() {
                       {isOnline ? (
                         <span 
                           className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-[#00a884] border-2 border-[#111b21] shadow-[0_0_8px_rgba(0,168,132,0.8)]" 
-                          title="on line" 
+                          title="online" 
                         />
                       ) : (
                         <span 
                           className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-dashed border-amber-400 bg-amber-500/40" 
-                          title="outline" 
+                          title="offline" 
                         />
                       )}
                     </div>
@@ -2165,11 +2165,11 @@ function RealConversationContent() {
                           {isOnline ? (
                             <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 inline-flex items-center gap-1 uppercase tracking-wider">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                              on line
+                              online
                             </span>
                           ) : (
                             <span className="text-[10px] font-bold px-1.5 py-0.2 rounded border border-dashed border-amber-400/70 bg-amber-500/10 text-amber-300 inline-flex items-center gap-1 uppercase tracking-wider">
-                              outline
+                              offline
                             </span>
                           )}
                           <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-[#202c33] text-slate-300 border border-white/5">
@@ -2221,9 +2221,9 @@ function RealConversationContent() {
                       }`}
                     />
                     {activePartner.is_online ? (
-                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-[#00a884] border-2 border-[#202c33] shadow-[0_0_8px_rgba(0,168,132,0.8)]" title="on line" />
+                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-[#00a884] border-2 border-[#202c33] shadow-[0_0_8px_rgba(0,168,132,0.8)]" title="online" />
                     ) : (
-                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-dashed border-amber-400 bg-amber-500/40" title="outline" />
+                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-dashed border-amber-400 bg-amber-500/40" title="offline" />
                     )}
                   </div>
 
@@ -2259,7 +2259,7 @@ function RealConversationContent() {
                     type="button"
                     onClick={() => handleStartRemoteCall(true)}
                     className="p-1.5 sm:p-2.5 rounded-full hover:bg-white/10 text-[#aebac1] hover:text-white transition-colors cursor-pointer active:scale-95"
-                    title={activePartner.is_online ? "HD Video Call (on line)" : "HD Video Call (outline)"}
+                    title={activePartner.is_online ? "HD Video Call (online)" : "HD Video Call (offline)"}
                   >
                     <Video className="w-5 h-5" />
                   </button>
@@ -2269,7 +2269,7 @@ function RealConversationContent() {
                     type="button"
                     onClick={() => handleStartRemoteCall(false)}
                     className="p-1.5 sm:p-2.5 rounded-full hover:bg-white/10 text-[#aebac1] hover:text-white transition-colors cursor-pointer active:scale-95"
-                    title={activePartner.is_online ? "Voice Call (on line)" : "Voice Call (outline)"}
+                    title={activePartner.is_online ? "Voice Call (online)" : "Voice Call (offline)"}
                   >
                     <Phone className="w-5 h-5" />
                   </button>
@@ -2911,18 +2911,18 @@ function RealConversationContent() {
         </div>
       )}
 
-      {/* Signal Outline Warning Modal for Offline Partner Call */}
+      {/* Offline Partner Call Modal */}
       {showOfflineCallModal?.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
           <div className="relative w-full max-w-md rounded-3xl bg-[#111b21] border-2 border-amber-500/80 p-6 shadow-[0_0_50px_rgba(245,158,11,0.25)] text-center">
-            {/* Outline Signal Icon */}
+            {/* Offline Icon */}
             <div className="w-16 h-16 rounded-full border-2 border-amber-400 bg-amber-500/10 flex items-center justify-center mx-auto mb-4 text-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.3)] animate-pulse">
               <WifiOff className="w-8 h-8" />
             </div>
 
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-500/50 bg-amber-500/10 text-amber-300 text-xs font-bold uppercase tracking-wider mb-2">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-              Signal Outline : Partenaire Hors Ligne
+              Statut : Partenaire Hors Ligne (Offline)
             </div>
 
             <h3 className="text-lg font-bold text-white mb-2">
@@ -2930,7 +2930,7 @@ function RealConversationContent() {
             </h3>
 
             <p className="text-xs sm:text-sm text-slate-300 mb-6 leading-relaxed">
-              Le signal outline indique que <strong className="text-amber-300">{activePartner?.name}</strong> est actuellement déconnecté(e). Il/elle ne pourra peut-être pas décrocher l&apos;appel en direct.
+              Le statut offline indique que <strong className="text-amber-300">{activePartner?.name}</strong> est actuellement déconnecté(e). Il/elle ne pourra peut-être pas décrocher l&apos;appel en direct.
             </p>
 
             <div className="space-y-2.5">
