@@ -1263,6 +1263,40 @@ export default function AdminBackOfficePage() {
               <p className="text-emerald-600 dark:text-emerald-400 font-mono font-bold">● Connecté & Opérationnel (PostgreSQL 15)</p>
               <p className="text-slate-600 dark:text-slate-400 text-[11px]">{isFr ? "Tables profiles, challenges, posts, calls synchronisées." : "profiles, challenges, posts, calls tables in sync."}</p>
             </div>
+
+            {/* Google Gemini AI Configuration Card */}
+            <div className="p-4 rounded-xl bg-slate-50/70 dark:bg-white/[0.03] border border-violet-500/20 dark:border-violet-500/30 space-y-3 md:col-span-2">
+              <div className="flex items-center justify-between">
+                <p className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-violet-500" />
+                  <span>{isFr ? "Moteur IA Google Gemini (Emma Coach 24/7)" : "Google Gemini AI Engine (Emma Coach 24/7)"}</span>
+                </p>
+                <span className="text-[10px] font-black px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30 uppercase tracking-wider">
+                  Gemini 1.5 Flash • 2.0 Flash
+                </span>
+              </div>
+              <p className="text-slate-600 dark:text-slate-400 text-xs">
+                {isFr 
+                  ? "L'API Gemini répond à toutes les questions posées (culture générale, préparation d'entretiens, vie quotidienne, grammaire, vocabulaire), donne des conseils pédagogiques, forme en anglais à l'écrit et au vocal (notes vocales WhatsApp, dictée et appels directs/vidéos)."
+                  : "The Gemini API answers any question asked across all domains, gives personalized pedagogical advice, and trains users in written and vocal English (WhatsApp voice notes, speech dictation, live audio/video calls)."}
+              </p>
+              <div className="p-3 rounded-lg bg-black/30 border border-white/5 font-mono text-[11px] text-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <span className="text-slate-500">Variable: </span>
+                  <span className="text-emerald-400 font-bold">GEMINI_API_KEY</span>
+                  <span className="text-slate-500 text-[10px] ml-2">(.env.local ou Vercel Environment Variables)</span>
+                </div>
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 rounded bg-violet-600/30 hover:bg-violet-600/50 text-violet-200 border border-violet-500/40 text-[10px] font-bold inline-flex items-center gap-1 w-fit transition-colors"
+                >
+                  <span>{isFr ? "Obtenir clé API gratuite Google AI Studio" : "Get free Google AI Studio Key"}</span>
+                  <ArrowRight className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
           </div>
         </div>
       )}

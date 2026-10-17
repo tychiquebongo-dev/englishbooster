@@ -307,6 +307,67 @@ function RealConversationContent() {
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const speechRecognitionRef = useRef<any>(null);
+  const voiceNoteTranscriptRef = useRef<string>('');
+  const [isDictatingText, setIsDictatingText] = useState(false);
+  const textDictationRef = useRef<any>(null);
+
+  // Toggle Speech-to-Text dictation directly into the text input
+  const toggleTextDictation = () => {
+    if (isDictatingText) {
+      if (textDictationRef.current) {
+        try { textDictationRef.current.stop(); } catch {}
+        textDictationRef.current = null;
+      }
+      setIsDictatingText(false);
+      return;
+    }
+
+    const SpeechRec = typeof window !== 'undefined' && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+    if (!SpeechRec) {
+      alert(isFr ? "La reconnaissance vocale n'est pas supportée sur ce navigateur." : "Speech recognition is not supported in this browser.");
+      return;
+    }
+
+    try {
+      const rec = new SpeechRec();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = 'en-US';
+
+      rec.onstart = () => {
+        setIsDictatingText(true);
+        playSound?.('click');
+      };
+
+      rec.onresult = (ev: any) => {
+        let full = '';
+        for (let i = 0; i < ev.results.length; i++) {
+          full += ev.results[i][0].transcript + ' ';
+        }
+        if (full.trim()) {
+          setInputText(prev => {
+            const trimmed = full.trim();
+            return prev ? `${prev} ${trimmed}` : trimmed;
+          });
+        }
+      };
+
+      rec.onerror = () => {
+        setIsDictatingText(false);
+      };
+
+      rec.onend = () => {
+        setIsDictatingText(false);
+      };
+
+      rec.start();
+      textDictationRef.current = rec;
+    } catch (e) {
+      console.warn('Text dictation error:', e);
+      setIsDictatingText(false);
+    }
+  };
 
   // Smooth scroll to an identified message with glow pulse
   const scrollToMessage = (msgId: string) => {
@@ -1538,6 +1599,27 @@ function RealConversationContent() {
       });
       audioStreamRef.current = stream;
 
+      // Start speech recognition in parallel to capture user spoken words for Gemini AI
+      voiceNoteTranscriptRef.current = '';
+      const SpeechRec = typeof window !== 'undefined' && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+      if (SpeechRec) {
+        try {
+          const rec = new SpeechRec();
+          rec.continuous = true;
+          rec.interimResults = true;
+          rec.lang = 'en-US';
+          rec.onresult = (ev: any) => {
+            let full = '';
+            for (let i = 0; i < ev.results.length; i++) {
+              full += ev.results[i][0].transcript + ' ';
+            }
+            voiceNoteTranscriptRef.current = full.trim();
+          };
+          rec.start();
+          speechRecognitionRef.current = rec;
+        } catch {}
+      }
+
       const mimeType = getSupportedAudioMimeType();
       const options: MediaRecorderOptions = mimeType ? { mimeType } : {};
       const recorder = new MediaRecorder(stream, options);
@@ -1554,6 +1636,12 @@ function RealConversationContent() {
         if (!activePartner) return;
         const targetPartnerId = activePartner.id;
         const recordedDuration = Math.max(1, Math.round((Date.now() - recordingStartTimeRef.current) / 1000));
+
+        // Stop speech recognition
+        if (speechRecognitionRef.current) {
+          try { speechRecognitionRef.current.stop(); } catch {}
+          speechRecognitionRef.current = null;
+        }
 
         // Stop stream tracks immediately so mic indicator disappears
         if (audioStreamRef.current) {
@@ -1597,30 +1685,60 @@ function RealConversationContent() {
             return nextMap;
           });
 
-          // If sending voice note to Emma AI, trigger an authentic spoken voice reply!
+          // If sending voice note to Emma AI, trigger Gemini AI written + spoken audio reply!
           if (targetPartnerId === 'eb-ai-coach' || activePartner?.is_ai) {
             setIsAiTyping(true);
             (async () => {
               try {
-                const voiceReplyPrompts = [
-                  "I loved listening to your voice note! Your pronunciation is getting clearer and more natural. Speaking out loud like this is the #1 secret to fluent English. Here is my voice note back to you — how did it feel recording your voice?",
-                  "Fantastic job speaking out loud! I can hear your confidence growing. Recording voice notes is such great practice. Here is my voice message for you — tell me, what was the most interesting part of your day?",
-                  "Great voice note! Your rhythm and intonation are sounding very natural. Speaking without fear is how true fluency happens. What other topics would you like to practice speaking about with me today?",
-                ];
-                const voiceReplyText = voiceReplyPrompts[Math.floor(Math.random() * voiceReplyPrompts.length)];
-                let aiAudioUrl: string | null = null;
-                try {
-                  aiAudioUrl = await synthesizeEmmaVoiceNote(voiceReplyText);
-                } catch {}
+                const userSpokenWords = voiceNoteTranscriptRef.current.trim();
+                const aiQuery = userSpokenWords 
+                  ? `[Spoken voice note from user]: "${userSpokenWords}". Please respond as Emma AI, directly answering any questions, coaching their English pronunciation/syntax, and asking a conversational follow-up question.`
+                  : `The user sent you a spoken voice note to practice conversational English. Please respond with a warm, encouraging spoken voice coaching message, answer any questions, and ask a great follow-up question!`;
 
-                await new Promise(r => setTimeout(r, 1400));
+                let aiReplyText = '';
+                let aiAudioUrl: string | null = null;
+
+                try {
+                  const res = await fetch('/api/ai/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      message: aiQuery,
+                      history: (conversationMap['eb-ai-coach'] || []).slice(-8).map(m => ({
+                        role: m.sender_id === 'eb-ai-coach' ? 'assistant' : 'user',
+                        content: m.text,
+                      })),
+                      userLevel: profile?.current_level || 'B1',
+                      includeAudio: true,
+                    }),
+                  });
+                  if (res.ok) {
+                    const data = await res.json();
+                    if (data?.reply) aiReplyText = data.reply;
+                    if (data?.audioUrl) aiAudioUrl = data.audioUrl;
+                  }
+                } catch (fetchErr) {
+                  console.warn('Gemini voice query fetch error:', fetchErr);
+                }
+
+                if (!aiReplyText) {
+                  aiReplyText = userSpokenWords 
+                    ? `I heard you say: "${userSpokenWords}"! Great spoken flow and pronunciation. Keep speaking every single day!`
+                    : "I loved listening to your voice note! Your pronunciation and spoken confidence are shining through. Speaking out loud like this is the #1 secret to fluent English. Tell me, how did it feel recording your voice?";
+                }
+
+                if (!aiAudioUrl) {
+                  aiAudioUrl = await synthesizeEmmaVoiceNote(aiReplyText);
+                }
+
+                await new Promise(r => setTimeout(r, 1000));
 
                 const emmaVoiceMsg: ChatMessage = {
                   id: `emma_voice_${Date.now()}`,
                   sender_id: 'eb-ai-coach',
                   sender_name: 'Emma AI • English Coach',
                   sender_avatar: EMMA_AI_PARTNER.avatar,
-                  text: voiceReplyText,
+                  text: aiReplyText,
                   audio_url: aiAudioUrl || undefined,
                   created_at: new Date().toISOString(),
                   status: 'read',
@@ -1743,6 +1861,10 @@ function RealConversationContent() {
   };
 
   const cancelRecording = () => {
+    if (speechRecognitionRef.current) {
+      try { speechRecognitionRef.current.stop(); } catch {}
+      speechRecognitionRef.current = null;
+    }
     if (mediaRecorderRef.current) {
       try {
         mediaRecorderRef.current.ondataavailable = null;
@@ -2642,7 +2764,7 @@ function RealConversationContent() {
                       {activePartner.is_ai ? (
                         <span className="text-[9px] font-black px-2 py-0.5 rounded bg-violet-500/25 text-violet-300 border border-violet-500/40 inline-flex items-center gap-1 uppercase tracking-wider shrink-0">
                           <Sparkles className="w-2.5 h-2.5 text-violet-400" />
-                          <span>AI Coach 24/7</span>
+                          <span>Google Gemini AI</span>
                         </span>
                       ) : (
                         <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 hidden sm:inline-flex shrink-0">
@@ -2653,9 +2775,9 @@ function RealConversationContent() {
                     <p className="text-[11px] text-slate-400 truncate flex items-center gap-1 sm:gap-1.5 mt-0.5">
                       <span className="hidden xs:inline">{activePartner.country} •</span>
                       {activePartner.is_ai ? (
-                        <span className="text-violet-400 font-semibold inline-flex items-center gap-1 text-[11px]">
+                        <span className="text-violet-300 font-semibold inline-flex items-center gap-1 text-[11px]">
                           <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-                          24/7 en direct
+                          <span>{isFr ? "Active 24/7 • Répond à tout & Coaching vocal Gemini" : "24/7 Live • Answers Any Question & Gemini Voice"}</span>
                         </span>
                       ) : activePartner.is_online ? (
                         <span className="text-[#00a884] font-semibold inline-flex items-center gap-1 text-[11px]">
@@ -3278,6 +3400,20 @@ function RealConversationContent() {
                       <Paperclip className="w-5 h-5" />
                     </button>
 
+                    {/* Speech-to-Text Voice Dictation Button */}
+                    <button
+                      type="button"
+                      onClick={toggleTextDictation}
+                      className={`p-1.5 transition-all shrink-0 cursor-pointer rounded-full ${
+                        isDictatingText 
+                          ? 'bg-rose-500/20 text-rose-400 ring-2 ring-rose-500/50 animate-pulse' 
+                          : 'text-[#8696a0] hover:text-emerald-400'
+                      }`}
+                      title={isFr ? (isDictatingText ? "Arrêter la dictée vocale" : "Dicter une question au micro (Speech-to-Text)") : (isDictatingText ? "Stop voice dictation" : "Dictate your question (Speech-to-Text)")}
+                    >
+                      <Mic className="w-5 h-5" />
+                    </button>
+
                     {/* Native WhatsApp Text Input Field */}
                     <input
                       ref={inputRef}
@@ -3302,7 +3438,13 @@ function RealConversationContent() {
                           handleSendMessage();
                         }
                       }}
-                      placeholder={user ? "Type a message" : "Sign in to send messages..."}
+                      placeholder={
+                        isDictatingText
+                          ? (isFr ? "🎙️ Écoute en cours... Parlez maintenant" : "🎙️ Listening... Speak your question now")
+                          : (activePartner.is_ai 
+                              ? (isFr ? "Posez n'importe quelle question à Gemini AI..." : "Ask Gemini AI any question or practice...") 
+                              : (user ? "Type a message" : "Sign in to send messages..."))
+                      }
                       className="flex-1 min-w-0 py-2.5 px-4 bg-[#2a3942] rounded-lg text-[#d1d7db] placeholder-[#8696a0] text-sm sm:text-[15px] focus:outline-none transition-colors border border-transparent"
                     />
 

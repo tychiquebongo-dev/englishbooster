@@ -21,20 +21,23 @@ English Booster is an EdTech web platform designed to solve a common global chal
    - AI Compatibility Score calculation (e.g. 98% Match) based on learning goals, availability, and shared passions.
    - Granular filtering by country, CEFR level, native language, interests, and real-time online status.
 
-3. **Live Chat & AI Pedagogical Grammar Assistant**
-   - Instant messaging with simulated conversation partner responses.
-   - Voice note recorder with animated audio waveforms.
-   - Built-in **AI Grammar Correction Engine** that detects common mistakes (e.g., *"I have went to London yesterday"* → *"I went to London yesterday"*) and displays the exact pedagogical rule with 1-click correction application.
+3. **Live Chat & Google Gemini AI Universal Coach (Emma AI 24/7)**
+   - 24/7 AI Speaking Coach powered by **Google Gemini** (`gemini-1.5-flash`, `gemini-2.0-flash`).
+   - Answers **ANY question** across any domain (culture, science, tech, career, grammar rules, job interviews).
+   - Multi-format support: **Written dialogue and real spoken audio voice notes** with interactive waveforms.
+   - Built-in **Speech-to-Text Voice Dictation** allowing users to dictate questions directly via microphone.
+   - Intelligent pedagogical grammar coaching with gentle corrections and vocabulary enrichment.
 
 4. **Live Audio & Video Calling Room**
-   - Audio and video toggles (Mute/Unmute, Camera On/Off, Screen Share simulation).
+   - Audio and video toggles (Mute/Unmute, Camera On/Off, Screen Share).
    - Real-time elapsed duration counter (`12:43`).
-   - Dynamic floating **AI Coach conversation prompts** that suggest discussion topics during the conversation.
+   - Direct AI voice and video calls powered by **Google Gemini** with live speech recognition and vocal synthesis.
    - Post-call summary with speaking duration, fluency score, and `+50 XP` reward.
 
-5. **AI English Coach**
-   - Radar and bar analytics tracking: Speaking (78%), Vocabulary (72%), Grammar (68%), Fluency (81%), and Confidence (84%).
-   - Interactive Speech Synthesis (TTS) & Speech Recognition (STT) for interactive spoken practice.
+5. **AI English Coach (Emma AI Powered by Gemini)**
+   - Universal knowledge mentor capable of answering any question and adapting to CEFR levels (A1 to C2).
+   - Instant text-to-speech voice playback in natural British/American English.
+   - Radar and bar analytics tracking: Speaking, Vocabulary, Grammar, Fluency, and Confidence.
 
 6. **Daily Challenges & Gamification**
    - Featured daily speaking prompts (e.g., *"What is your dream destination?"*).

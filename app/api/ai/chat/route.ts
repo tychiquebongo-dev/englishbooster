@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateEmmaAIResponse } from '@/lib/aiAgent';
+import { queryEmmaAI, getGeminiApiKey } from '@/lib/gemini';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,7 +10,7 @@ function cleanTextForSpeech(text: string): string {
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
     .replace(/\[(.*?)\]\(.*?\)/g, '$1')
-    .replace(/💡.*?(?=\n|$)/gi, '')
+    .replace(/💡.*?(?=\n|$)/gi, '') // Keep TTS clean and spoken naturally
     .replace(/[🤖✨🎉✈️💼☕🎬🌍💡🎙️❤️🔥👍👏]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -24,7 +24,8 @@ async function generateTTSAudio(text: string): Promise<{ audioUrl: string | null
     const chunks = cleaned.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [cleaned];
     const buffers: Buffer[] = [];
 
-    for (const chunk of chunks.slice(0, 4)) {
+    // Synthesize up to first 5 chunks for fast instant voice note delivery
+    for (const chunk of chunks.slice(0, 5)) {
       const trimmed = chunk.trim();
       if (!trimmed) continue;
       const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=en-GB&client=tw-ob&q=${encodeURIComponent(trimmed.slice(0, 150))}`;
@@ -62,66 +63,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Message text is required' }, { status: 400 });
     }
 
-    let reply = '';
+    // Convert input history to uniform ChatHistoryMessage format
+    const formattedHistory = history.map((h: any) => ({
+      role: (h.role === 'assistant' || h.role === 'model' || h.sender_id === 'eb-ai-coach' || h.sender === 'assistant') 
+        ? 'assistant' 
+        : 'user',
+      content: h.content || h.text || '',
+    }));
 
-    // 1. External LLM Bridge (Groq / OpenAI) if keys are provided
-    const apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
-    if (apiKey) {
-      try {
-        const endpoint = process.env.GROQ_API_KEY 
-          ? 'https://api.groq.com/openai/v1/chat/completions' 
-          : 'https://api.openai.com/v1/chat/completions';
-        const model = process.env.GROQ_API_KEY ? 'llama-3.1-8b-instant' : 'gpt-4o-mini';
+    // Query Emma AI (Google Gemini Primary Engine -> Fallbacks)
+    const aiResult = await queryEmmaAI(message, formattedHistory, userLevel);
+    const reply = aiResult.reply;
 
-        const systemPrompt = `You are Emma, a friendly, warm, and articulate 24/7 AI English Speaking Partner and Fluency Coach on English Booster.
-You talk like an authentic, empathetic human English tutor from London, UK.
-- Communicate in natural, engaging conversational English.
-- Adapt your vocabulary to the learner's level (${userLevel}).
-- Keep responses conversational (2-4 sentences max per turn) so the user gets plenty of speaking practice.
-- Ask an engaging open-ended question at the end of each response to maintain the conversation.
-- If the learner makes a clear grammar mistake, include a short, gentle, friendly tip at the end.`;
-
-        const messages = [
-          { role: 'system', content: systemPrompt },
-          ...history.slice(-8).map((h: any) => ({
-            role: (h.role === 'assistant' || h.sender_id === 'eb-ai-coach' || h.sender === 'assistant') ? 'assistant' : 'user',
-            content: h.content || h.text || '',
-          })),
-          { role: 'user', content: message }
-        ];
-
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model,
-            messages,
-            temperature: 0.7,
-            max_tokens: 250,
-          }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          const llmReply = data.choices?.[0]?.message?.content;
-          if (llmReply) {
-            reply = llmReply;
-          }
-        }
-      } catch (externalErr) {
-        console.warn('External LLM call failed, falling back to internal engine:', externalErr);
-      }
-    }
-
-    // 2. Built-in high-performance Natural Dialogue Engine (Zero latency, 100% reliable)
-    if (!reply) {
-      reply = generateEmmaAIResponse(message, history, userLevel);
-    }
-
-    // 3. Generate Audio Voice Note if requested
+    // Generate Audio Voice Note if requested (message vocal)
     let audioUrl: string | null = null;
     let duration = 0;
     if (includeAudio) {
@@ -135,6 +89,9 @@ You talk like an authentic, empathetic human English tutor from London, UK.
       audioUrl,
       duration,
       agent: 'Emma AI',
+      model: aiResult.model,
+      source: aiResult.source,
+      hasGeminiKey: !!getGeminiApiKey(),
       timestamp: new Date().toISOString(),
     });
   } catch (err: any) {
