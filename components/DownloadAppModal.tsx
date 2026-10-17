@@ -47,6 +47,7 @@ export default function DownloadAppModal({
   const [installedSuccess, setInstalledSuccess] = useState(false);
   const [isMobileDevice, setIsMobileDevice] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
+  const [showAndroidGuide, setShowAndroidGuide] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -83,8 +84,6 @@ export default function DownloadAppModal({
   }, [isOpen]);
 
   if (!isOpen) return null;
-
-  const [showAndroidGuide, setShowAndroidGuide] = useState(false);
 
   const handleNativeInstall = async () => {
     playSound?.('click');
