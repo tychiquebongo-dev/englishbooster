@@ -28,6 +28,7 @@ module.exports = {
       fontFamily: {
         heading: ['Outfit', 'sans-serif'],
         body: ['Plus Jakarta Sans', 'sans-serif'],
+        chat: ['var(--font-chat)', 'Inter', 'system-ui', '-apple-system', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
     },

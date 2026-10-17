@@ -191,6 +191,72 @@ function parseMessageText(rawText: string): { text: string; replyTo: ChatReplyTo
   return { text: rawText, replyTo: null };
 }
 
+// Ultra-Modern & Professional Message Typography Formatter
+function FormattedChatMessage({ text }: { text: string }) {
+  if (!text) return null;
+
+  const lines = text.split('\n');
+
+  return (
+    <div className="chat-bubble-content font-chat text-[14.5px] sm:text-[15px] leading-[1.54] tracking-[-0.012em] select-text pr-2 space-y-1">
+      {lines.map((line, lineIdx) => {
+        if (!line.trim()) {
+          return <div key={lineIdx} className="h-1.5" />;
+        }
+
+        const isBullet = /^[*\-•]\s+/.test(line);
+        const cleanLine = isBullet ? line.replace(/^[*\-•]\s+/, '') : line;
+
+        return (
+          <div key={lineIdx} className={isBullet ? "flex items-start gap-1.5 ml-1" : ""}>
+            {isBullet && (
+              <span className="text-emerald-400 font-bold select-none leading-relaxed">•</span>
+            )}
+            <p className="leading-relaxed">
+              {renderInlineTokens(cleanLine)}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function renderInlineTokens(line: string): React.ReactNode[] {
+  const tokenRegex = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g;
+  const parts = line.split(tokenRegex);
+
+  return parts.map((part, index) => {
+    if (!part) return null;
+
+    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+      return (
+        <code key={index}>
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      return (
+        <strong key={index}>
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+
+    if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
+      return (
+        <em key={index}>
+          {part.slice(1, -1)}
+        </em>
+      );
+    }
+
+    return <span key={index}>{part}</span>;
+  });
+}
+
 function RealConversationContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -2696,33 +2762,33 @@ function RealConversationContent() {
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-0.5 gap-1">
-                          <span className="font-bold text-sm text-white truncate flex items-center gap-1.5">
+                          <span className="font-bold text-[13.5px] sm:text-sm text-white truncate flex items-center gap-1.5 font-chat tracking-tight">
                             <span>{partner.name}</span>
                             <span>{partner.flag}</span>
                           </span>
                           <div className="flex items-center gap-1 shrink-0">
                             {partner.is_ai ? (
-                              <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-violet-500/25 text-violet-300 border border-violet-500/40 inline-flex items-center gap-1 uppercase tracking-wider">
+                              <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-violet-500/25 text-violet-300 border border-violet-500/40 inline-flex items-center gap-1 uppercase tracking-wider font-chat">
                                 <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
                                 24/7 IA
                               </span>
                             ) : isOnline ? (
-                              <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 inline-flex items-center gap-1 uppercase tracking-wider">
+                              <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 inline-flex items-center gap-1 uppercase tracking-wider font-chat">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                 online
                               </span>
                             ) : (
-                              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded border border-dashed border-amber-400/70 bg-amber-500/10 text-amber-300 inline-flex items-center gap-1 uppercase tracking-wider">
+                              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded border border-dashed border-amber-400/70 bg-amber-500/10 text-amber-300 inline-flex items-center gap-1 uppercase tracking-wider font-chat">
                                 offline
                               </span>
                             )}
-                            <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-[#202c33] text-slate-300 border border-white/5">
+                            <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-[#202c33] text-slate-300 border border-white/5 font-chat">
                               {partner.level}
                             </span>
                           </div>
                         </div>
 
-                        <p className="text-xs text-slate-400 truncate">
+                        <p className="text-xs text-slate-400 truncate font-chat font-normal tracking-[-0.01em] leading-normal">
                           {lastMsg ? (lastMsg.text || '') : (partner.specialty || '')}
                         </p>
                       </div>
@@ -2773,34 +2839,34 @@ function RealConversationContent() {
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <h2 className="font-bold text-sm sm:text-base text-white flex items-center gap-1 sm:gap-1.5 truncate leading-tight">
+                    <h2 className="font-bold text-sm sm:text-base text-white flex items-center gap-1 sm:gap-1.5 truncate leading-tight font-chat tracking-tight">
                       <span className="truncate">{activePartner.name}</span>
                       <span className="shrink-0">{activePartner.flag}</span>
                       {activePartner.is_ai ? (
-                        <span className="text-[9px] font-black px-2 py-0.5 rounded bg-violet-500/25 text-violet-300 border border-violet-500/40 inline-flex items-center gap-1 uppercase tracking-wider shrink-0">
+                        <span className="text-[9px] font-black px-2 py-0.5 rounded bg-violet-500/25 text-violet-300 border border-violet-500/40 inline-flex items-center gap-1 uppercase tracking-wider shrink-0 font-chat">
                           <Sparkles className="w-2.5 h-2.5 text-violet-400" />
                           <span>Google Gemini AI</span>
                         </span>
                       ) : (
-                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 hidden sm:inline-flex shrink-0">
+                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 hidden sm:inline-flex shrink-0 font-chat">
                           {activePartner.level}
                         </span>
                       )}
                     </h2>
-                    <p className="text-[11px] text-slate-400 truncate flex items-center gap-1 sm:gap-1.5 mt-0.5">
+                    <p className="text-[11px] text-slate-400 truncate flex items-center gap-1 sm:gap-1.5 mt-0.5 font-chat tracking-tight">
                       <span className="hidden xs:inline">{activePartner.country} •</span>
                       {activePartner.is_ai ? (
-                        <span className="text-violet-300 font-semibold inline-flex items-center gap-1 text-[11px]">
+                        <span className="text-violet-300 font-semibold inline-flex items-center gap-1 text-[11px] font-chat">
                           <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
                           <span>{isFr ? "Active 24/7 • Répond à tout & Coaching vocal Gemini" : "24/7 Live • Answers Any Question & Gemini Voice"}</span>
                         </span>
                       ) : activePartner.is_online ? (
-                        <span className="text-[#00a884] font-semibold inline-flex items-center gap-1 text-[11px]">
+                        <span className="text-[#00a884] font-semibold inline-flex items-center gap-1 text-[11px] font-chat">
                           <span className="w-1.5 h-1.5 rounded-full bg-[#00a884] animate-pulse" />
                           online
                         </span>
                       ) : (
-                        <span className="text-amber-400/90 font-medium inline-flex items-center gap-1 text-[11px]">
+                        <span className="text-amber-400/90 font-medium inline-flex items-center gap-1 text-[11px] font-chat">
                           <WifiOff className="w-2.5 h-2.5 text-amber-400" />
                           offline
                         </span>
@@ -2909,7 +2975,7 @@ function RealConversationContent() {
                         <div
                           onClick={() => setSelectedMsgId(prev => prev === msg.id ? null : msg.id)}
                           style={{ touchAction: 'pan-y' }}
-                          className={`relative max-w-[85%] sm:max-w-md px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed shadow-md group/bubble cursor-pointer select-text transition-all ${
+                          className={`relative max-w-[85%] sm:max-w-md px-3.5 py-2.5 rounded-2xl text-[14.5px] sm:text-[15px] leading-relaxed shadow-md group/bubble cursor-pointer select-text transition-all font-chat tracking-[-0.012em] ${
                             isMe
                               ? 'bg-[#005c4b] text-white rounded-tr-none'
                               : 'bg-[#202c33] text-white rounded-tl-none border border-white/5'
@@ -2918,7 +2984,7 @@ function RealConversationContent() {
                           {/* Floating quick actions on bubble hover or tap */}
                           <div className={`absolute -top-3.5 ${isMe ? 'right-2' : 'left-2'} ${
                             isSelected ? 'flex' : 'hidden group-hover/bubble:flex'
-                          } items-center gap-1 bg-[#111b21] border border-white/20 px-2 py-0.5 rounded-full shadow-xl z-20 animate-fade-in`}>
+                          } items-center gap-1 bg-[#111b21] border border-white/20 px-2 py-0.5 rounded-full shadow-xl z-20 animate-fade-in font-chat`}>
                             {/* Reply button */}
                             <button
                               type="button"
@@ -2981,19 +3047,19 @@ function RealConversationContent() {
                                   scrollToMessage(msg.reply_to.id);
                                 }
                               }}
-                              className="mb-2 p-2 rounded-xl bg-black/30 border-l-4 border-emerald-400 hover:bg-black/50 transition-colors cursor-pointer text-left select-none group/quote"
+                              className="mb-2 p-2 rounded-xl bg-black/30 border-l-4 border-emerald-400 hover:bg-black/50 transition-colors cursor-pointer text-left select-none group/quote font-chat"
                               title="Cliquer pour faire défiler jusqu'au message cité"
                             >
                               <div className="flex items-center justify-between text-[11px] font-bold text-emerald-300">
-                                <span className="flex items-center gap-1">
+                                <span className="flex items-center gap-1 font-chat tracking-tight">
                                   <CornerDownRight className="w-3 h-3 text-emerald-400" />
                                   {msg.reply_to.sender_name}
                                 </span>
-                                <span className="text-[9px] text-emerald-400/80 group-hover/quote:underline">
+                                <span className="text-[9px] text-emerald-400/80 group-hover/quote:underline font-chat">
                                   Voir le message ↗
                                 </span>
                               </div>
-                              <p className="text-xs text-white/85 line-clamp-2 mt-0.5 font-normal">
+                              <p className="text-xs text-white/90 line-clamp-2 mt-0.5 font-normal font-chat leading-snug">
                                 {msg.reply_to.text}
                               </p>
                             </div>
@@ -3007,16 +3073,16 @@ function RealConversationContent() {
 
                             if (isMissedCall) {
                               return (
-                                <div className="py-1 px-0.5 flex flex-col gap-2 min-w-[210px] sm:min-w-[250px]">
+                                <div className="py-1 px-0.5 flex flex-col gap-2 min-w-[210px] sm:min-w-[250px] font-chat">
                                   <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center shrink-0 text-rose-400 shadow-sm">
                                       {isVideoMissed ? <VideoOff className="w-5 h-5 text-rose-400" /> : <PhoneOff className="w-5 h-5 text-rose-400" />}
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                      <p className="font-extrabold text-sm text-rose-300 flex items-center gap-1.5 leading-tight">
+                                      <p className="font-extrabold text-[13.5px] sm:text-sm text-rose-300 flex items-center gap-1.5 leading-tight tracking-tight font-chat">
                                         <span>{isVideoMissed ? (isFr ? "Appel vidéo manqué" : "Missed video call") : (isFr ? "Appel vocal manqué" : "Missed voice call")}</span>
                                       </p>
-                                      <p className="text-[11px] text-slate-300 mt-0.5 leading-tight">
+                                      <p className="text-[11px] text-slate-300 mt-0.5 leading-tight font-chat">
                                         {isMe 
                                           ? (isFr ? "Appel sortant non décroché" : "Outgoing call was not answered") 
                                           : (isFr ? "Appel manqué • Touchez pour rappeler" : "Missed call • Tap to call back")}
@@ -3025,8 +3091,8 @@ function RealConversationContent() {
                                   </div>
 
                                   {/* WhatsApp Call Back Action Button */}
-                                  <div className="pt-2 border-t border-white/10 flex items-center justify-between">
-                                    <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
+                                  <div className="pt-2 border-t border-white/10 flex items-center justify-between font-chat">
+                                    <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider font-chat">
                                       {isVideoMissed ? (isFr ? "Vidéo HD" : "HD Video") : (isFr ? "Vocal Direct" : "Direct Voice")}
                                     </span>
                                     <button
@@ -3035,7 +3101,7 @@ function RealConversationContent() {
                                         e.stopPropagation();
                                         handleStartRemoteCall(isVideoMissed);
                                       }}
-                                      className="px-3 py-1 rounded-full bg-[#00a884] hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer"
+                                      className="px-3 py-1 rounded-full bg-[#00a884] hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer font-chat"
                                       title={isFr ? "Rappeler ce partenaire" : "Call back partner"}
                                     >
                                       {isVideoMissed ? <Video className="w-3.5 h-3.5 fill-slate-950" /> : <Phone className="w-3.5 h-3.5 fill-slate-950" />}
@@ -3046,12 +3112,12 @@ function RealConversationContent() {
                               );
                             }
 
-                            return <p className="whitespace-pre-line text-sm break-words pr-4">{msg?.text || ''}</p>;
+                            return <FormattedChatMessage text={rawText} />;
                           })()}
 
                           {/* Real Voice Note Player */}
                           {msg.audio_url && (
-                            <div className="mt-2.5 p-2.5 rounded-2xl bg-black/25 border border-white/10 flex items-center gap-3 shadow-inner">
+                            <div className="mt-2.5 p-2.5 rounded-2xl bg-black/25 border border-white/10 flex items-center gap-3 shadow-inner font-chat">
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -3068,7 +3134,7 @@ function RealConversationContent() {
                                 )}
                               </button>
 
-                              <div className="flex-1 flex flex-col justify-center min-w-[120px] gap-1">
+                              <div className="flex-1 flex flex-col justify-center min-w-[120px] gap-1 font-chat">
                                 {/* Waveform visualizer */}
                                 <div className="flex items-center gap-1 h-5 overflow-hidden">
                                   {[8, 16, 22, 14, 20, 10, 18, 12, 24, 15, 19, 11, 25, 14, 20, 9].map((h, idx) => {
@@ -3098,7 +3164,7 @@ function RealConversationContent() {
                                   e.stopPropagation();
                                   toggleSpeedRate();
                                 }}
-                                className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] font-black text-emerald-300 hover:text-white transition-colors shrink-0 cursor-pointer"
+                                className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] font-black text-emerald-300 hover:text-white transition-colors shrink-0 cursor-pointer font-chat"
                                 title="Playback Speed"
                               >
                                 {audioPlaybackRate}x
@@ -3106,20 +3172,20 @@ function RealConversationContent() {
                             </div>
                           )}
 
-                          <div className="mt-1 flex items-center justify-end gap-1.5 text-[10px] text-white/70 select-none">
+                          <div className="mt-1 flex items-center justify-end gap-1.5 text-[10.5px] text-white/70 select-none font-chat">
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 speakEnglishText(msg.text, msg.id);
                               }}
-                              className={`p-0.5 rounded hover:text-white transition-colors flex items-center gap-0.5 mr-auto ${
+                              className={`p-0.5 rounded hover:text-white transition-colors flex items-center gap-0.5 mr-auto font-chat ${
                                 speakingMsgId === msg.id ? 'text-amber-300 animate-pulse' : 'text-white/60'
                               }`}
                               title="Listen to English Pronunciation"
                             >
                               <Volume2 className="w-3.5 h-3.5" />
-                              <span className="text-[9px]">Listen</span>
+                              <span className="text-[9.5px]">Listen</span>
                             </button>
 
                             {/* Reply Quick Action */}
@@ -3161,7 +3227,7 @@ function RealConversationContent() {
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
 
-                            <span>
+                            <span className="font-chat text-[10.5px] font-medium text-white/70 tracking-tight">
                               {(() => {
                                 try {
                                   const d = msg.created_at ? new Date(msg.created_at) : new Date();
@@ -3460,7 +3526,7 @@ function RealConversationContent() {
                               ? (isFr ? "Posez n'importe quelle question à Gemini AI..." : "Ask Gemini AI any question or practice...") 
                               : (user ? "Type a message" : "Sign in to send messages..."))
                       }
-                      className="flex-1 min-w-0 py-2.5 px-4 bg-[#2a3942] rounded-lg text-[#d1d7db] placeholder-[#8696a0] text-sm sm:text-[15px] focus:outline-none transition-colors border border-transparent"
+                      className="flex-1 min-w-0 py-2.5 px-4 bg-[#2a3942] rounded-xl text-[#e9edef] placeholder-[#8696a0] font-chat text-[14.5px] sm:text-[15px] leading-relaxed tracking-[-0.01em] focus:outline-none transition-colors border border-transparent focus:border-[#00a884]/40"
                     />
 
                     {/* WhatsApp Action: Send if text, Mic if empty */}

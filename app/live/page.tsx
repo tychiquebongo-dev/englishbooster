@@ -1115,10 +1115,10 @@ function LiveRoomsContent() {
                                 {msg.sender_name ? msg.sender_name.charAt(0).toUpperCase() : 'P'}
                               </div>
                             )}
-                            <div className="flex-1 bg-white/5 p-2 rounded-xl border border-white/5">
+                            <div className="flex-1 bg-white/5 p-2 rounded-xl border border-white/5 font-chat">
                               <div className="flex items-center justify-between mb-0.5">
-                                <span className="font-bold text-cyan-400 text-[11px]">{msg.sender_name}</span>
-                                <div className="flex items-center gap-1">
+                                <span className="font-bold text-cyan-400 text-[11.5px] font-chat tracking-tight">{msg.sender_name}</span>
+                                <div className="flex items-center gap-1 font-chat">
                                   <button
                                     type="button"
                                     onClick={() => speakLiveText(msg.text, msg.id)}
@@ -1130,10 +1130,10 @@ function LiveRoomsContent() {
                                   >
                                     <Volume2 className="w-3 h-3" />
                                   </button>
-                                  <span className="text-[10px] text-slate-500">{msg.timestamp}</span>
+                                  <span className="text-[10px] text-slate-500 font-chat">{msg.timestamp}</span>
                                 </div>
                               </div>
-                              <p className="text-slate-200 leading-relaxed">{msg.text}</p>
+                              <p className="text-slate-200 text-xs sm:text-[13px] leading-relaxed font-chat tracking-[-0.01em]">{msg.text}</p>
                               {msg.audio_url && (
                                 <audio src={msg.audio_url} controls className="w-full h-6 mt-1" />
                               )}
@@ -1144,19 +1144,19 @@ function LiveRoomsContent() {
                     </div>
 
                     {/* Chat Input Bar */}
-                    <form onSubmit={handleSendMessage} className="p-3 border-t border-white/10 bg-[#091024] space-y-2">
+                    <form onSubmit={handleSendMessage} className="p-3 border-t border-white/10 bg-[#091024] space-y-2 font-chat">
                       <div className="flex items-center gap-2">
                         <input
                           type="text"
                           value={inputMessage}
                           onChange={(e) => setInputMessage(e.target.value)}
                           placeholder={isFr ? "Message en anglais..." : "Type in English..."}
-                          className="flex-1 px-3 py-2 rounded-xl bg-white/5 border border-white/15 focus:border-cyan-400 focus:outline-none text-xs text-white placeholder-slate-500"
+                          className="flex-1 px-3 py-2 rounded-xl bg-white/5 border border-white/15 focus:border-cyan-400 focus:outline-none font-chat text-xs text-white placeholder-slate-500 tracking-[-0.01em]"
                         />
                         <button
                           type="submit"
                           disabled={!inputMessage.trim()}
-                          className="p-2 rounded-xl bg-cyan-500 text-slate-950 font-bold disabled:opacity-40 transition-transform active:scale-95"
+                          className="p-2 rounded-xl bg-cyan-500 text-slate-950 font-bold disabled:opacity-40 transition-transform active:scale-95 font-chat cursor-pointer"
                         >
                           <Send className="w-3.5 h-3.5" />
                         </button>
