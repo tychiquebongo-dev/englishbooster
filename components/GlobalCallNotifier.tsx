@@ -50,26 +50,13 @@ export default function GlobalCallNotifier() {
   const activeNotificationRef = useRef<Notification | null>(null);
   const incomingCallRef = useRef<IncomingCallPayload | null>(null);
 
-  // Pre-unlock audio on first touch/click for zero-latency background ringing
+  // Stop any ringing whenever navigating to /live video rooms
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
-    const unlockAudio = () => {
-      if (ringAudioRef.current) {
-        ringAudioRef.current.play().then(() => {
-          ringAudioRef.current?.pause();
-          ringAudioRef.current.currentTime = 0;
-        }).catch(() => {});
-      }
-    };
-
-    window.addEventListener('click', unlockAudio, { once: true });
-    window.addEventListener('touchstart', unlockAudio, { once: true });
-    return () => {
-      window.removeEventListener('click', unlockAudio);
-      window.removeEventListener('touchstart', unlockAudio);
-    };
-  }, []);
+    if (pathname?.startsWith('/live')) {
+      stopRinging();
+    }
+  }, [pathname]);
 
   // Register service worker on mount & check notification permissions
   useEffect(() => {
@@ -849,11 +836,12 @@ export default function GlobalCallNotifier() {
         </aside>
       )}
 
-      {/* Hidden audio element for instant looped phone ringer */}
+      {/* Hidden audio element for incoming phone ringer (never played on /live) */}
       <audio
         ref={ringAudioRef}
+        data-eb-phone-ringer="true"
         src="/assets/sounds/phone-ring.wav"
-        preload="auto"
+        preload="none"
         loop
         className="hidden"
       />

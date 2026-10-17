@@ -213,13 +213,14 @@ function RemoteVideoView({
         ref={videoRef}
         autoPlay
         playsInline
+        data-live-video="true"
         className={`w-full h-full object-cover transition-opacity duration-300 ${
           showVideo ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'
         }`}
       />
 
       {/* Auxiliary audio element to guarantee loud and clear audio playback */}
-      <audio ref={audioRef} autoPlay playsInline />
+      <audio ref={audioRef} autoPlay playsInline data-live-audio="true" />
 
       {/* Fallback avatar tile if camera is disabled or connecting */}
       {!showVideo && (
@@ -930,14 +931,34 @@ function LiveRoomsContent() {
   // 4. Audio Autoplay Policy Unlock Listener (User Interaction)
   useEffect(() => {
     const unlockAudio = () => {
-      document.querySelectorAll('video, audio').forEach(el => {
+      // ONLY play live video conference audio & video elements, NEVER ringtones!
+      document.querySelectorAll('audio[data-live-audio="true"], video[data-live-video="true"]').forEach(el => {
         const media = el as HTMLMediaElement;
         if (!media.muted && media.paused) {
           media.play().catch(() => {});
         }
       });
+
+      // Guarantee any phone ring sound is completely silent & stopped
+      document.querySelectorAll('audio[src*="phone-ring"], audio[data-eb-phone-ringer]').forEach(el => {
+        try {
+          const a = el as HTMLAudioElement;
+          a.pause();
+          a.currentTime = 0;
+        } catch {}
+      });
+
       setAudioUnlocked(true);
     };
+
+    // Stop any ringer immediately on mount of live room
+    document.querySelectorAll('audio[src*="phone-ring"], audio[data-eb-phone-ringer]').forEach(el => {
+      try {
+        const a = el as HTMLAudioElement;
+        a.pause();
+        a.currentTime = 0;
+      } catch {}
+    });
 
     window.addEventListener('click', unlockAudio);
     window.addEventListener('touchstart', unlockAudio);
@@ -1636,8 +1657,16 @@ function LiveRoomsContent() {
             {!audioUnlocked && occupiedSeatsCount > 1 && (
               <div 
                 onClick={() => {
-                  document.querySelectorAll('video').forEach(v => {
-                    if (!v.muted && v.paused) v.play().catch(() => {});
+                  document.querySelectorAll('audio[data-live-audio="true"], video[data-live-video="true"]').forEach(el => {
+                    const media = el as HTMLMediaElement;
+                    if (!media.muted && media.paused) media.play().catch(() => {});
+                  });
+                  document.querySelectorAll('audio[src*="phone-ring"], audio[data-eb-phone-ringer]').forEach(el => {
+                    try {
+                      const a = el as HTMLAudioElement;
+                      a.pause();
+                      a.currentTime = 0;
+                    } catch {}
                   });
                   setAudioUnlocked(true);
                 }}
