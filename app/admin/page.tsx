@@ -381,6 +381,21 @@ export default function AdminBackOfficePage() {
     setActionNotice(isFr ? "Profils des membres réels synchronisés avec succès." : "Real member profiles synced successfully.");
   };
 
+  // Full purge of partners in Supabase
+  const handlePurgeAllPartners = async () => {
+    if (!confirm(isFr ? "⚠️ Confirmer la suppression de TOUS les partenaires dans Supabase (table 'partners' et profils de test) ?" : "⚠️ Confirm purge of ALL partners in Supabase (table 'partners' and test profiles)?")) return;
+    playSound('click');
+    try {
+      await supabase.from('partners').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('profiles').delete().neq('email', 'tychiquebongo@gmail.com').neq('role', 'admin');
+      await fetchAdminData();
+      playSound('achievement');
+      setActionNotice(isFr ? "✓ Tous les partenaires ont été purgés dans Supabase." : "✓ All partners purged successfully in Supabase.");
+    } catch (err: any) {
+      setActionNotice(isFr ? `Erreur purge : ${err?.message || 'Échec'}` : `Purge error: ${err?.message || 'Failed'}`);
+    }
+  };
+
   // Delete post
   const handleDeletePost = async (postId: string) => {
     if (!confirm(isFr ? "Supprimer cette publication de la communauté ?" : "Delete this community post?")) return;
@@ -1101,54 +1116,76 @@ export default function AdminBackOfficePage() {
               </p>
             </div>
 
-            <button
-              onClick={handleRefreshProfiles}
-              className="px-3.5 py-2 rounded-xl bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-700 dark:text-teal-300 text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>{isFr ? "Actualiser les partenaires réels" : "Refresh real partners"}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleRefreshProfiles}
+                className="px-3.5 py-2 rounded-xl bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-700 dark:text-teal-300 text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>{isFr ? "Actualiser" : "Refresh"}</span>
+              </button>
+
+              <button
+                onClick={handlePurgeAllPartners}
+                className="px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
+                title={isFr ? "Vider tous les partenaires dans Supabase" : "Purge all partners in Supabase"}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isFr ? "Vider les partenaires (Supabase)" : "Purge partners (Supabase)"}</span>
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {realPartnersList.map((partner) => (
-              <div key={partner.id} className="p-4 rounded-xl bg-slate-50/70 dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <img
-                      src={getUserAvatar(partner.avatar_url, partner.full_name, partner.email)}
-                      alt={partner.full_name}
-                      className="w-11 h-11 rounded-xl object-cover ring-2 ring-slate-200 dark:ring-white/10"
-                    />
-                    <span className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-[#060a14] ${
-                      partner.is_online ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-500'
-                    }`} />
+          {realPartnersList.length === 0 ? (
+            <div className="text-center py-12 rounded-xl bg-slate-50/70 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 space-y-2">
+              <p className="text-slate-600 dark:text-slate-400 text-sm font-semibold">
+                {isFr ? "Aucun partenaire inscrit dans la base pour le moment." : "No registered partners in the database yet."}
+              </p>
+              <p className="text-xs text-slate-500">
+                {isFr ? "Tous les partenaires précédents ont été purgés de Supabase et de l'interface." : "All previous partners have been purged from Supabase and the interface."}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {realPartnersList.map((partner) => (
+                <div key={partner.id} className="p-4 rounded-xl bg-slate-50/70 dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <img
+                        src={getUserAvatar(partner.avatar_url, partner.full_name, partner.email)}
+                        alt={partner.full_name}
+                        className="w-11 h-11 rounded-xl object-cover ring-2 ring-slate-200 dark:ring-white/10"
+                      />
+                      <span className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-[#060a14] ${
+                        partner.is_online ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-500'
+                      }`} />
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <span>{partner.full_name}</span>
+                        <span>{partner.flag || '🌐'}</span>
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        {(partner.role === 'admin' || partner.email === 'tychiquebongo@gmail.com') ? "Côte d'Ivoire 🇨🇮 • Fondateur C2" : `${partner.country || 'France'} • Niveau ${partner.current_level || 'B1'}`}
+                      </p>
+                      <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">🔥 {partner.streak ?? 0}j série • {partner.minutes_spoken ?? 0} min parole</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
-                      <span>{partner.full_name}</span>
-                      <span>{partner.flag || '🌐'}</span>
-                    </p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      {(partner.role === 'admin' || partner.email === 'tychiquebongo@gmail.com') ? "Côte d'Ivoire 🇨🇮 • Fondateur C2" : `${partner.country || 'France'} • Niveau ${partner.current_level || 'B1'}`}
-                    </p>
-                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">🔥 {partner.streak ?? 0}j série • {partner.minutes_spoken ?? 0} min parole</p>
-                  </div>
+
+                  <button
+                    onClick={() => handleTogglePartnerOnline(partner.id, partner.is_online)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                      partner.is_online
+                        ? 'bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30'
+                        : 'bg-slate-100 hover:bg-slate-200 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-white/5'
+                    }`}
+                  >
+                    {partner.is_online ? (isFr ? 'En Ligne' : 'Online') : (isFr ? 'Hors Ligne' : 'Offline')}
+                  </button>
                 </div>
-
-                <button
-                  onClick={() => handleTogglePartnerOnline(partner.id, partner.is_online)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                    partner.is_online
-                      ? 'bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30'
-                      : 'bg-slate-100 hover:bg-slate-200 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-white/5'
-                  }`}
-                >
-                  {partner.is_online ? (isFr ? 'En Ligne' : 'Online') : (isFr ? 'Hors Ligne' : 'Offline')}
-                </button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

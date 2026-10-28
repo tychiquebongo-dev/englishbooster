@@ -166,49 +166,9 @@ export default function PartnersPage() {
             };
           });
 
-          // Create Gemini AI Partner card (pinned 24/7 speaking partner & coach)
-          const geminiPartner: DisplayPartner = {
-            id: GEMINI_AI_PARTNER.id,
-            name: GEMINI_AI_PARTNER.name,
-            avatar: GEMINI_AI_PARTNER.avatar,
-            country: GEMINI_AI_PARTNER.country,
-            flag: GEMINI_AI_PARTNER.flag,
-            level: GEMINI_AI_PARTNER.level,
-            target_level: GEMINI_AI_PARTNER.target_level,
-            bio: isFr 
-              ? "Bonjour ! Je suis Gemini AI, votre partenaire & assistant IA en anglais disponible 24h/24. Posez-moi toutes vos questions, discutons en direct, développons votre fluidité orale, corrigeons vos erreurs et pratiquons la conversation sans stress !"
-              : GEMINI_AI_PARTNER.bio,
-            specialty: isFr ? '✨ Google Gemini IA Partenaire • 24/7' : GEMINI_AI_PARTNER.specialty,
-            interests: GEMINI_AI_PARTNER.interests,
-            is_online: true,
-            rating: 5.0,
-            reviews_count: 3180,
-            streak: 365,
-            is_ai: true,
-          };
-
-          setPartners([geminiPartner, ...realPartners]);
+          setPartners(realPartners);
         } else {
-          const geminiPartner: DisplayPartner = {
-            id: GEMINI_AI_PARTNER.id,
-            name: GEMINI_AI_PARTNER.name,
-            avatar: GEMINI_AI_PARTNER.avatar,
-            country: GEMINI_AI_PARTNER.country,
-            flag: GEMINI_AI_PARTNER.flag,
-            level: GEMINI_AI_PARTNER.level,
-            target_level: GEMINI_AI_PARTNER.target_level,
-            bio: isFr 
-              ? "Bonjour ! Je suis Gemini AI, votre partenaire & assistant IA en anglais disponible 24h/24. Posez-moi toutes vos questions, discutons en direct, développons votre fluidité orale, corrigeons vos erreurs et pratiquons la conversation sans stress !"
-              : GEMINI_AI_PARTNER.bio,
-            specialty: isFr ? '✨ Google Gemini IA Partenaire • 24/7' : GEMINI_AI_PARTNER.specialty,
-            interests: GEMINI_AI_PARTNER.interests,
-            is_online: true,
-            rating: 5.0,
-            reviews_count: 3180,
-            streak: 365,
-            is_ai: true,
-          };
-          setPartners([geminiPartner]);
+          setPartners([]);
         }
 
         if (shortsData && shortsData.length > 0) {
@@ -623,6 +583,42 @@ export default function PartnersPage() {
                 </span>
               </button>
             </div>
+          </div>
+
+          {/* 24/7 AI COACH PRACTICE BANNER */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-blue-500/10 border border-violet-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-violet-400 shrink-0 shadow-inner">
+                <Sparkles className="w-6 h-6 text-violet-400 animate-pulse" />
+              </div>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-black text-slate-900 dark:text-white">
+                    Google Gemini AI Coach
+                  </h4>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-700 dark:text-violet-300 font-extrabold uppercase tracking-wide border border-violet-500/30">
+                    24/7 {isFr ? "Disponible" : "Available"}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-400 max-w-xl">
+                  {isFr 
+                    ? "En attendant que d'autres partenaires de conversation se connectent, pratiquez la prise de parole en direct avec notre coach IA sans stress."
+                    : "While waiting for other conversation partners to join, practice speaking English live with zero stress with our AI coach."}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                playSound('call');
+                router.push('/call?partnerId=eb-ai-coach&partnerName=Gemini%20AI&video=true&ai=true');
+              }}
+              className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs shadow-md hover:shadow-violet-500/25 flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0"
+            >
+              <PhoneCall className="w-3.5 h-3.5" />
+              <span>{isFr ? "Appeler l'IA en Direct" : "Practice Live with AI"}</span>
+            </button>
           </div>
 
           {/* PARTNERS GRID */}
